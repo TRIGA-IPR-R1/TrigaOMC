@@ -1,2 +1,3 @@
-# TrigaMC
-Monte Carlo Model
+# TrigaOMC
+
+Free input of Triga IPR-R1 monte carlo model for OpenMC
