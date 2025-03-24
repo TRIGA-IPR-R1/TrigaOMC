@@ -163,7 +163,7 @@ source = openmc.IndependentSource(
     space=space_dist,
     angle=openmc.stats.Isotropic(),  # Ângulo isotrópico
     energy=energy_dist,              # Espectro de energia para Co-60
-    strength=3.7e7                   # Intensidade da fonte (1 mCi)
+    strength=3.7e7                   # Intensidade da fonte (1 mCi ou 0,7mCi?)
 )
 
 # ======================
