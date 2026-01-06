@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+# Cancele caso seja executado diretamente.
 if __name__ == '__main__':
     print("Isso é uma biblioteca, importe ela ao invés de a executar diretamente...")
     exit(1)
@@ -14,13 +15,6 @@ import matplotlib.pyplot as plt
 import openmc
 
 import libTrigaIprR1_load as load
-
-# Cancele caso seja executado diretamente.
-if __name__ == '__main__':
-    print("Isso é uma biblioteca, importe ela ao invés de a executar diretamente...")
-    exit(1)
-    
-
 
 """
 Variáveis de controle:
@@ -88,57 +82,39 @@ def chdir(nome=None):
             print("Não foi possível encontrar um diretório mais recente.")
 
 
-import numpy as np
-import math
+"""
 
-def calc_cordenadas():
-    # Definindo vetor para armazenar o raio de cada elemento do anel
-    anel_r = {}
-    anel_r['A'] = 0
-    anel_r['B'] = 10.5
-    anel_r['C'] = 21
-    anel_r['D'] = 31.5
-    anel_r['E'] = 42
-    anel_r['F'] = 52.6
-    
-    # Cria uma lista com as chaves ['A', 'B', 'C', 'D', 'E', 'F'] para acesso por índice
-    letras_aneis = list(anel_r.keys())
+"""
 
-    # Definindo theta de cada elemento de cada anel
-    anel_elem_theta = []
-    
-    # Iterando sobre o número de anéis
-    for i in range(len(letras_aneis)): 
-        qtd = 6 * i
-        if qtd == 0:
-            qtd = 1
-        theta = np.zeros(qtd)
-        for n in range(qtd):
-            # Nota: Para A1 (anel central), isso gera 90 graus.
-            theta[n] = 90 + (360 / qtd) * n 
-        anel_elem_theta.append(theta)
-    
-    anel_elem_theta = np.array(anel_elem_theta, dtype=object)
 
-    cord_x_elem = {}
-    cord_y_elem = {}
+class DadosElementos:
+    x: float             #Coordenada carteziana x
+    y: float             #Coordenada carteziana y
+    r: float             #Coordenada polar r
+    theta: float         #Coordenada polar theta
+    load: str = "água"   #Tipo de carregamento. Por padrão, não carregado (água)
 
-    for i in range(len(letras_aneis)):
-        letra_atual = letras_aneis[i]
-        r = anel_r[letra_atual]
-        
-        theta = anel_elem_theta[i]
-        x = np.zeros_like(theta)
-        y = np.zeros_like(theta)
+def cria_elementos_com_coordenadas(
+        qtd_aneis = 6,
+        pitch_radial = 10.5
+        ):
 
-        for n in range(len(theta)):
-            theta_rad = math.radians(theta[n])
-            x[n] = r * math.cos(theta_rad)
-            y[n] = r * math.sin(theta_rad)
-            cord_x_elem[f'{letra_atual}{n+1}'] = float(x[n])
-            cord_y_elem[f'{letra_atual}{n+1}'] = float(y[n])
-    
-    return cord_x_elem, cord_y_elem
+    elemento = {}
+    for n_radial in range(qtd_aneis):               # Iterando sobre o número de anéis
+        letra_anel = chr(65 + n_radial)             # Calcula a letra do respectivo anel (65 é o código ASCII para 'A')
+        r = pitch_radial * n_radial                 # Calcula raio de acordo com n_radial
+        qtd_elementos = 6 * n_radial                # Cada anel tem uma quantidade de elementos multiplo de 6, proporcial ao n_radial
+        if qtd_elementos == 0:                      # Com excessão do primeiro anel
+            qtd_elementos = 1                       # Que tem um único elemento (tubo central)
+        for n_elemento in range(qtd_elementos):     # Iterando sobre o número de elementos do respectivo anel
+            theta    = math.radians(90 + (360 / qtd_elementos) * n_elemento) # Calcula coordenanda theta em radianos # Nota: Girando 90 graus para corresponder a orientação padrão
+            elemento[f"{letra_anel}{n_elemento}"] = DadosElementos(          # Salva coordenadas no elemento
+                r       = r,
+                theta   = theta,
+                x       = r * math.cos(theta),
+                y       = r * math.sin(theta)
+                )
+    return elemento
 
 """
 Classe principal para definir o reator TRIGA IPR-R1
