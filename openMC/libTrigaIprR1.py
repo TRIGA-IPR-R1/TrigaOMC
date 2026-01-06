@@ -119,17 +119,14 @@ def cria_elementos_com_coordenadas(
 """
 Classe principal para definir o reator TRIGA IPR-R1
 
-O cronstrutor (init) define o reator com configurações padrão.
+O construtor (init) define o reator com configurações padrão.
 
 Para alterar as configurações do reator, crie materiais, geometrias, etc, nos locais adequados, e as chame depois de criar o objeto.
 
-Exemplo de simulção de 2 geometrias com materiais diferentes:
-import libTrigaIprR1
-triga = libTrigaIprR1.TrigaIprR1()
-triga.geo.nucleo1960()
-triga.run()
-triga.geo.nucleoImaginario(mat1="Pu239", mat1_porcentagem=20, mat2="Th232", mat2_porcentagem=80)
-triga.run()
+Exemplo de uso padrão:
+    import libTrigaIprR1
+    triga = libTrigaIprR1.TrigaIprR1()
+    triga.run()
 """
 class TrigaIprR1:
 
@@ -179,7 +176,7 @@ class TrigaIprR1:
         printv("############     materiais_padrão    ###########")
         printv("################################################")
         
-        self.materiais = openmc.Materials()
+        self.Materials = openmc.Materials()
         self.colors = {}
         
         self.m_refrigerante = openmc.Material(name='Água Leve')
@@ -189,7 +186,7 @@ class TrigaIprR1:
         self.m_refrigerante.add_nuclide('O17', 3.5857E-04, percent_type='wo')
         self.m_refrigerante.add_nuclide('O18', 1.9982E-03, percent_type='wo')
         self.m_refrigerante.set_density('g/cm3', 1)
-        self.materiais.append(self.m_refrigerante)
+        self.Materials.append(self.m_refrigerante)
         self.colors[self.m_refrigerante] = 'blue'
         
         
@@ -203,14 +200,14 @@ class TrigaIprR1:
         self.m_ar.add_nuclide('Ar38', 3.4177E-03, percent_type='ao')
         self.m_ar.add_nuclide('Ar40', 3.2467E-03, percent_type='ao')
         self.m_ar.set_density('g/cm3', 0.001225)
-        self.materiais.append(self.m_ar)
+        self.Materials.append(self.m_ar)
         self.colors[self.m_ar] = 'white'
         
         
         self.m_aluminio = openmc.Material(name='Alúminio')
         self.m_aluminio.add_nuclide('Al27', 1, percent_type ='wo')
         self.m_aluminio.set_density('g/cm3', 2.7)
-        self.materiais.append(self.m_aluminio)
+        self.Materials.append(self.m_aluminio)
         self.colors[self.m_aluminio] = 'gray'
         
         
@@ -228,7 +225,7 @@ class TrigaIprR1:
         self.m_SS304.add_element('N',  1.4000E-04, percent_type = 'wo')
         self.m_SS304.add_element('Fe', 6.9687E-01, percent_type = 'wo')
         self.m_SS304.set_density('g/cm3', 7.92)
-        self.materiais.append(self.m_SS304)
+        self.Materials.append(self.m_SS304)
         self.colors[self.m_SS304] = 'silver'
         
         if(comb=='fresco'):
@@ -314,7 +311,7 @@ class TrigaIprR1:
             
             #Adicionar todos combustíveis na lista, e definir uma cor para eles
             for material in self.m_comb.values():
-                self.materiais.append(material)
+                self.Materials.append(material)
                 self.colors[material] = 'yellow'
             
 
