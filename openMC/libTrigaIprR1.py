@@ -88,12 +88,14 @@ def chdir(nome=None):
 
 
 class DadosElementos:
-    x: float             #Coordenada carteziana x
-    y: float             #Coordenada carteziana y
-    r: float             #Coordenada polar r
-    theta: float         #Coordenada polar theta
-    universo = None      #Tipo de universo que representa o elemento
-    mat_combustivel = None   #Material do combustível
+    x: float                    #Coordenada carteziana x
+    y: float                    #Coordenada carteziana y
+    r: float                    #Coordenada polar r
+    theta: float                #Coordenada polar theta
+    # load e mat_combustivel são mais para fins de debug, ou pode ser usados posteriormente
+    load = None                 #Para armazenar o tipo do elemento que veio do "load"
+    universo = None             #Para armazenar o universo que contem o elemento
+    mat_combustivel = None      #Para armazenar o material do combustível, caso seja um elemento combustível
 
 def cria_elementos_com_coordenadas(
         qtd_aneis = 6,
@@ -322,44 +324,92 @@ class TrigaIprR1:
         self,
         load = load.core1
         ):
+        
+        # Universos elementos que não se repetem
+        universo_elemento_tuboCentralAgua       = openmc.Universe()
+        universo_elemento_fonte                 = openmc.Universe()
+        universo_elemento_terminalPneumático1   = openmc.Universe()
+
+        # Universos elementos que se repetem
+        ## Obs: o universo_elemento_grafite, como todos são exatamente iguais, poderia ser um universo único, mas isso causaria repetição dos IDs das células
+        def cria_universo_elemento_grafite():
+            universo_elemento_grafite               = openmc.Universe()
+            return universo_elemento_grafite
+
+        ## As barras de controle são geometricamente iguais, podendo variar suas posiçoes independentemente
+        def cria_universo_elemento_barraDeControle(posição_barra):
+            celula_comb = openmc.Cell()
+            universo_elemento_barraDeControle       = openmc.Universe()
+            universo_elemento_barraDeControle.add_cell(celula_comb)
+            return universo_elemento_barraDeControle
+        
+        ## Cada elemento combustível pode ter uma composição diferente
+        def cria_universo_elemento_combustivel(fill):
+            celula_comb = openmc.Cell()
+            celula_comb.fill = fill
+            universo_elemento_combustivel           = openmc.Universe()
+            universo_elemento_combustivel.add_cell(celula_comb)
+            return universo_elemento_combustivel
+        
+        ## Os combustíveis de inox tem uma geometria ligeiramente diferente, e não tem absorvedores
+        def cria_universo_elemento_combustivel_inox(fill):
+            celula_comb = openmc.Cell()
+            celula_comb.fill = fill
+            universo_elemento_combustivel_inox      = openmc.Universe()
+            universo_elemento_combustivel_inox.add_cell(celula_comb)
+            return universo_elemento_combustivel_inox
+            
+
 
         # Crie o dicionário de elementos, já com as coordenadas
         elemento = cria_elementos_com_coordenadas()
-        
-
-        # Exemplo de como definir uma geometria com um material
-        universo = openmc.Universe()
-        celula = openmc.Cell()
-        celula.fill = self.m_comb[load['B1']]
-        universo.add_cell(celula)
-        #self.geometrias.append(universo)
-
-
 
         # Carregue o universo de cada elemento baseado em sua chave e o load
         # Esse procedimento gasta processamento e ocupa mais memória, mas é uma forma de verificação que o load está correto
         chaves = list(elemento.keys())
         for chave in chaves:
+            elemento[chave].load = load[chave]
             if load[chave] == "água":
-                elemento[chave].universo = self.m_refrigerante
+                elemento[chave].universo = self.m_refrigerante #Por padrão, preencha só com material água
             if load[chave] == "grafite":
-                elemento[chave].universo = universo
+                elemento[chave].universo = cria_universo_elemento_grafite()
             if load[chave] == "tubo_central_agua":
-                elemento[chave].universo = universo
+                elemento[chave].universo = universo_elemento_tuboCentralAgua
             if load[chave] == "fonte":
-                elemento[chave].universo = universo
+                elemento[chave].universo = universo_elemento_fonte
             if load[chave] == "terminal_pneumático_1":
-                elemento[chave].universo = universo
+                elemento[chave].universo = universo_elemento_terminalPneumático1
             if load[chave] == "barra_controle":
-                elemento[chave].universo = universo
+                elemento[chave].universo = cria_universo_elemento_barraDeControle(0)
             if type(load[chave]) == int:
-                elemento[chave].universo = universo
-                elemento[chave].mat_combustivel = self.m_comb[load[chave]]
-                
+                if load[chave]>6000:
+                    elemento[chave].universo = cria_universo_elemento_combustivel(self.m_comb[load[chave]])
+                    elemento[chave].mat_combustivel = self.m_comb[load[chave]]
+                else:
+                    elemento[chave].universo = cria_universo_elemento_combustivel_inox(self.m_comb[load[chave]])
+                    elemento[chave].mat_combustivel = self.m_comb[load[chave]]
         
+
+        # Geometria do núcleo
+        celulas_elemento = []
+        cilindros_elemento = []
+        for chave in chaves:
+            cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)
+            cilindros_elemento.append(cilindro_elemento)
+            
+            celula_elemento = openmc.Cell()
+            celula_elemento.fill = elemento[chave].universo
+            celulas_elemento.append(celula_elemento)
+            
+        cilindro_nucleo = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)   
+        celula_nucleo = openmc.Cell()
+        celula_nucleo.fill = elemento[chave].universo
+        celula_nucleo.region = +cilindros_elemento -cilindro_nucleo
+            
+            
         # Criar a geometria contendo 
-        self.geometrias = openmc.Geometry()
-        self.geometrias.root_universe = universo
+        self.Geometry = openmc.Geometry()
+        #self.Geometry.root_universe = universo
         
 
 
@@ -376,18 +426,16 @@ class TrigaIprR1:
         printv("################################################")
 
         # Declarando settings como pertencente a self pois algumas variáveis podem ser ultilizadas depois, como por exemplo: settings.batches
-        self.settings = openmc.Settings()
-        self.settings.particles = particulas
-        self.settings.batches = ciclos
+        self.Settings = openmc.Settings()
+        self.Settings.particles = particulas
+        self.Settings.batches = ciclos
         #self.settings.statepoint = {'batches': range(5, n + 5, 5)} #Use para gerar statepoint.#.h5 intermediários
-        self.settings.create_delayed_neutrons = n_atrasados
-        self.settings.photon_transport = foton
-        self.settings.inactive = inativo
-        self.settings.source = openmc.IndependentSource(space=openmc.stats.Point())
-        self.settings.output = {'tallies': False} #Esta linha desabilita a geração do arquivo tallies.out
-        printv(self.settings)
-
-
+        self.Settings.create_delayed_neutrons = n_atrasados
+        self.Settings.photon_transport = foton
+        self.Settings.inactive = inativo
+        self.Settings.source = openmc.IndependentSource(space=openmc.stats.Point())
+        self.Settings.output = {'tallies': False} #Esta linha desabilita a geração do arquivo tallies.out
+        printv(self.Settings)
 
     def plot2D_secao_transversal(
         self,
@@ -416,8 +464,8 @@ class TrigaIprR1:
             ############ Exportar Plots e Plotar
             plotagem = openmc.Plots(secao_transversal)
             plotagem.export_to_xml()
-            self.materiais.export_to_xml()
-            self.geometrias.export_to_xml()
+            self.Materials.export_to_xml()
+            self.Geometry.export_to_xml()
             openmc.plot_geometry()
 
     def plot3D(
@@ -446,11 +494,9 @@ class TrigaIprR1:
             plotagem = openmc.Plots(plot_3d)
             plotagem.export_to_xml()  
             openmc.plot_geometry()
-            self.materiais.export_to_xml()
-            self.geometrias.export_to_xml()
+            self.Materials.export_to_xml()
+            self.Geometry.export_to_xml()
             openmc.voxel_to_vtk(plot_3d.filename+'.h5', plot_3d.filename)
-
-
 
     def simulacao_autovalor(self):
         printv("################################################")
@@ -458,9 +504,9 @@ class TrigaIprR1:
         printv("#########        de autovalores        #########")
         printv("################################################")
         if simu:
-            self.materiais.export_to_xml()
-            self.geometrias.export_to_xml()
-            self.settings.export_to_xml()
+            self.Materials.export_to_xml()
+            self.Geometry.export_to_xml()
+            self.Settings.export_to_xml()
             openmc.run()
 
     
