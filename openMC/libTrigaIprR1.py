@@ -391,25 +391,35 @@ class TrigaIprR1:
         
 
         # Geometria do núcleo
+        ## Gerar uma célula a partir de um cilindro para cada elemento e gerar a região externa aos cilindros
         celulas_elemento = []
-        cilindros_elemento = []
+        regioes_externas_aos_pinos = []
         for chave in chaves:
-            cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)
-            cilindros_elemento.append(cilindro_elemento)
+            cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)    #Cria cilindro para ser a fronteira entre o universo_elemento e a água
+            regioes_externas_aos_pinos.append(+cilindro_elemento)                                   #Adiciona a região externa a esse cilindro na lista de regiões externas
             
-            celula_elemento = openmc.Cell()
-            celula_elemento.fill = elemento[chave].universo
-            celulas_elemento.append(celula_elemento)
-            
-        cilindro_nucleo = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)   
-        celula_nucleo = openmc.Cell()
-        celula_nucleo.fill = elemento[chave].universo
-        celula_nucleo.region = +cilindros_elemento -cilindro_nucleo
-            
+            celula_elemento = openmc.Cell()                         # Cria a célula para ser preenchida com o universo_elemento
+            celula_elemento.fill = elemento[chave].universo         # Preenche com o universo de acordo com a chave
+            celula_elemento.region = -cilindro_elemento             # A região da célula é interna ao cilindro
+            celulas_elemento.append(celula_elemento)                #Adiciona a lista de células
+        
+        for fora_do_pino in regioes_externas_aos_pinos:                             #Para cada região externa ao pino, de cada pica
+            região_externa_aos_pinos = região_externa_aos_pinos & fora_do_pino      #Adiciona à região_externa_aos_pinos a região externa a cada pino
+        
+        cilindro_nucleo_ativo = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)    #Cria um cilindro delimitar o núcleo ativo
+        celula_refrigente_nucleo_ativo = openmc.Cell()                                              #Cria célula que contém os espaços entre os elementos
+        celula_refrigente_nucleo_ativo.fill = self.m_refrigerante                                   #Preenche com água (os espaços entre os elementos)
+        celula_refrigente_nucleo_ativo.region = +região_externa_aos_pinos -cilindro_nucleo_ativo    #Define a região com externa a todos elementos e interna ao cilindro que delimita o núcleo ativo
+        
+        
+        
+        universo_nucleo_ativo = openmc.Universe()
+        universo_nucleo_ativo.add_cells(celulas_elemento)
+        universo_nucleo_ativo.add_cell(celula_refrigente_nucleo_ativo)
             
         # Criar a geometria contendo 
         self.Geometry = openmc.Geometry()
-        #self.Geometry.root_universe = universo
+        self.Geometry.root_universe = universo_nucleo_ativo
         
 
 
