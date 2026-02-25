@@ -26,8 +26,6 @@ Variáveis de controle:
     verbose: Controla se a função printv imprimirá no terminal
 
 """
-
-
 simu = True
 plot = True
 verbose = True
@@ -83,41 +81,97 @@ def chdir(nome=None):
 
 
 """
-
+Função e classe para criar dicionário de objetos "elementos carregáveis" com suas coordenadas e outros parâmetros
 """
 
+# Essa classe serve apenas para armazenar os dados dos elementos carregaveis de forma estruturada
+class DadosElementosCarregaveis:
+    # Coordenadas carteziana do elemento
+    x: float
+    y: float
+    
+    # Coordenadas polares do elemento
+    r: float
+    theta: float
+    
+    # O universo que irá preencher a célula do elemento
+    universo = None # Por padrão "None" preencherá com vácuo
+    
+    # load e mat_combustivel são atualmente para fins de debug, mas poderão ter alguma últilidade posteriormente
+    load = None                 # Para armazenar o tipo do elemento que veio do "load"
+    mat_combustivel = None      # Para armazenar o material do combustível, caso seja um elemento combustível
 
-class DadosElementos:
-    x: float                    #Coordenada carteziana x
-    y: float                    #Coordenada carteziana y
-    r: float                    #Coordenada polar r
-    theta: float                #Coordenada polar theta
-    # load e mat_combustivel são mais para fins de debug, ou pode ser usados posteriormente
-    load = None                 #Para armazenar o tipo do elemento que veio do "load"
-    universo = None             #Para armazenar o universo que contem o elemento
-    mat_combustivel = None      #Para armazenar o material do combustível, caso seja um elemento combustível
 
-def cria_elementos_com_coordenadas(
+
+def cria_elementosCarregaveis_com_coordenadas(
+        tipo_geometria = "cilindrica",
         qtd_aneis = 6,
-        pitch_radial = 10.5
+        pitch = 10.5,
         ):
 
-    elemento = {}
-    for n_radial in range(qtd_aneis):               # Iterando sobre o número de anéis
-        letra_anel = chr(65 + n_radial)             # Calcula a letra do respectivo anel (65 é o código ASCII para 'A')
-        r = pitch_radial * n_radial                 # Calcula raio de acordo com n_radial
-        qtd_elementos = 6 * n_radial                # Cada anel tem uma quantidade de elementos multiplo de 6, proporcial ao n_radial
-        if qtd_elementos == 0:                      # Com excessão do primeiro anel
-            qtd_elementos = 1                       # Que tem um único elemento (tubo central)
-        for n_elemento in range(qtd_elementos):     # Iterando sobre o número de elementos do respectivo anel
-            theta    = math.radians(90 + (360 / qtd_elementos) * n_elemento) # Calcula coordenanda theta em radianos # Nota: Girando 90 graus para corresponder a orientação padrão
-            elemento[f"{letra_anel}{n_elemento}"] = DadosElementos(          # Salva coordenadas no elemento
-                r       = r,
-                theta   = theta,
-                x       = r * math.cos(theta),
-                y       = r * math.sin(theta),
+    """
+    # Essa função cria todos os objetos "elementos carregaveis" com suas respectivas coordenadas
+    # Nota: Os parãmetros universo, load e mat_combustivel devem ser preenchidos posteriormente
+    cilindrica
+    hexagonal
+    """
+    
+    elemento = {}                                                                   # Cria dicionário contendo todos elementos
+    elemento["A0"] = DadosElementosCarregaveis(                                     # O anel A (n_radial=0), somente existe 1 elemento, o A0, então o crie na posição central
+                    r       = 0.0, 
+                    theta   = 0.0, 
+                    x       = 0.0, 
+                    y       = 0.0
                 )
+    
+    if tipo_geometria == "cilindrica":                                              # Considerando geometria cilíndrica
+        for n_radial in range(1,qtd_aneis):                                         # Iterando de 1 (anel B) até a quantidade de anéis
+            letra_anel = chr(65 + n_radial)                                         # Calcula a letra do respectivo anel (65 é o código ASCII para 'A', logo quando n_radial é 0 a letra é A, e assim sucessivamente)
+            r = pitch * n_radial                                                    # Calcula raio de acordo com n_radial baseado no pitch
+            qtd_elementos = 6 * n_radial                                            # Cada anel tem uma quantidade de elementos multiplo de 6, proporcial ao n_radial
+            if qtd_elementos == 0:                                                  # Com excessão do primeiro anel
+                qtd_elementos = 1                                                   # Que tem um único elemento (no IPR-R1 é o tubo central)
+            for n_elemento in range(qtd_elementos):                                 # Iterando sobre o número de elementos do respectivo anel
+                theta    = math.radians(90 + (360 / qtd_elementos) * n_elemento)    # Calcula coordenanda theta em radianos para cada elemento pertencente ao atual anel # Nota: Girando 90 graus para corresponder a orientação padrão
+                elemento[f"{letra_anel}{n_elemento}"] = DadosElementosCarregaveis(  # Cria objeto contendo os dados do respectivo elemento carregável
+                    r       = r,                                                    # Salvando as coordenadas polares no elemento
+                    theta   = theta,
+                    x       = r * math.cos(theta),                                  # Convertendo e salvando as coordenada cartezianas
+                    y       = r * math.sin(theta),
+                    )
+    
+    # Nota: o OpenMC possui função para criar latice hexagonal automáticamente, mas a fim de padronizar a geração de geometria, a geometria hexagonal será gerada manualmente da mesma forma que a geometria cilíndrica
+    elif tipo_geometria == "hexagonal":                                             # Considerando geometria hexagonal
+        
+        for n_radial in range(1,qtd_aneis):                                         # Iterando de 1 (anel B) até a quantidade de anéis
+            letra_anel = chr(65 + n_radial)                                         # Calcula a letra do respectivo anel (65 é o código ASCII para 'A', logo quando n_radial é 0 a letra é A, e assim sucessivamente)
+            angulos_passo = [-30, -90, -150, 150, 90, 30]                           # Definindo os angulos de cada aresta do hexagono
+            n_elemento = 0                                                          # Começando pelo elemento 0 do respectivo anel
+            x = 0.0                                                                 # Definindo coordenada carteziana X do elemento 0 de cada anel como 0 (Portanto o hexagono estará alinhado com o eixo Y)
+            y = n_radial * pitch                                                    # Definindo coordenada carteziana Y do elemento 0 de cada anel conforme orientação acima
+            for angulo in angulos_passo:                                            # Percorrendo cada aresta baseado no seu ângulo
+                dx = pitch * math.cos(math.radians(angulo))                         # Calculando o vetor de deslocamento (dx, dy) para a aresta atual (dada pelo ângulo) com comprimento do pitch
+                dy = pitch * math.sin(math.radians(angulo))
+                for _ in range(n_radial):                                           # Caminhando n_radial vezes ao longo da aresta    #Nota: coincidemente n_radial é igual a quantidade de elementos em uma aresta
+                    elemento[f"{letra_anel}{n_elemento}"] = DadosElementosCarregaveis(      # Cria objeto contendo os dados do respectivo elemento carregável 
+                        x       = x,                                                        # Salva a coordenada carteziana X com o valor atual da variável x
+                        y       = y,                                                        # Salva a coordenada carteziana Y com o valor atual da variável y
+                        r       = math.hypot(x, y),                                         # Converte x e y para a coordenada polar r
+                        theta   = (t := math.atan2(y, x)) + (2 * math.pi if t < 0 else 0)   # Converte x e y para a coordenada polar theta (caso seja negativo, some 2pi)
+                    )
+                    n_elemento += 1                                                 # Atualiza o valor de n_elemento para próxima execução
+                    x += dx                                                         # Move as coordenadas cartesianas para a posição do próximo elemento, para próxima execução
+                    y += dy
+                        
+    else:
+        print("Erro na função 'cria_elementosCarregaveis_com_coordenadas()':\n 'geometria' deve receber string 'cilindrica' ou 'hexagonal'.")
+        exit(0)
+    
     return elemento
+
+
+
+
 
 """
 Classe principal para definir o reator TRIGA IPR-R1
@@ -144,35 +198,44 @@ class TrigaIprR1:
 
     def mat_comb_fresco(
         self,
-        #Número de série, Massa de ZrH (g), Massa de Urânio (g), Massa de U235 (g)
         num_serie,
         massa_zirconio  = 2050.0607,
         massa_uranio    = 154.90+38.2500,
         massa_u235      = 38.2500,
-        hidretação      = 22.6445
+        hidretação      = 22.6445,
+        densidade       = 18,
         ):
-            
+        """
+        Função para padronizar a criação do material "combustível fresco" com as respectivas composições iniciais.
+        Args:
+            num_serie           = Número de série
+            massa_zirconio      = Massa de total de ZrH (g)
+            massa_uranio        = Massa de total de Urânio (g)
+            massa_u235          = Massa de somente U235 (g)
+            hidretação          = Massa de somente Hidrogênio (g)
+        """
+
         combustivel = openmc.Material(name = 'comb_' + num_serie)
-        combustivel.add_nuclide('U235', massa_u235)
-        combustivel.add_nuclide('U238', massa_uranio-massa_u235)
-        combustivel.add_nuclide('Zr',   massa_zirconio)
-        combustivel.add_nuclide('H1',   hidretação)
-        combustivel.set_density('g/cm3', 18)
-        
+        combustivel.add_nuclide('U235',     percent = massa_u235,                  percent_type = "wo") #Nota: é definido o percentural com base na massa. A massa usada na simulação é dada pela densidade e volume.
+        combustivel.add_nuclide('U238',     percent = massa_uranio-massa_u235,     percent_type = "wo")
+        combustivel.add_element('Zr',       percent = massa_zirconio-hidretação,   percent_type = "wo")
+        combustivel.add_element('H',        percent = hidretação,                  percent_type = "wo")
+        combustivel.set_density('g/cm3',    densidade)
+
         return combustivel
         
     def materiais(
         self,
-        comb='fresco'
+        queimado=None,
         ):
         """
         Função para definir todos materiais da simulação.
             Materiais padrões são os materiais não queimáveis (revestimento, estruturas, refletor, refrigente, etc.)
-            Meteriais combustíveis são queimados, portanto pode-se definílos como combistíveis frescos, ou queimados.
-                No caso de queimados, é preciso passar o path para o arquivo de materiais.
+            Meteriais combustíveis são queimáveis, portanto pode-se definílos como combistíveis frescos, ou já queimados.
+                No caso de queimados, é preciso passar o path para o arquivo de materiais na variável queimado.
                 
         Args:
-            comb (str, optional): 'fresco' ou 'queimado'
+            queimado (str, optional): None ou 'path_to_h5'
         """
         printv("################################################")
         printv("############ Definição dos Materiais ###########")
@@ -180,7 +243,7 @@ class TrigaIprR1:
         printv("################################################")
         
         self.Materials = openmc.Materials()
-        self.colors = {}
+        self.m_colors = {}
         
         self.m_refrigerante = openmc.Material(name='Água Leve')
         self.m_refrigerante.add_nuclide('H1',  1.1187E-01, percent_type='wo')
@@ -190,7 +253,7 @@ class TrigaIprR1:
         self.m_refrigerante.add_nuclide('O18', 1.9982E-03, percent_type='wo')
         self.m_refrigerante.set_density('g/cm3', 1)
         self.Materials.append(self.m_refrigerante)
-        self.colors[self.m_refrigerante] = 'blue'
+        self.m_colors[self.m_refrigerante] = 'blue'
         
         
         self.m_ar = openmc.Material(name='Ar')
@@ -204,14 +267,14 @@ class TrigaIprR1:
         self.m_ar.add_nuclide('Ar40', 3.2467E-03, percent_type='ao')
         self.m_ar.set_density('g/cm3', 0.001225)
         self.Materials.append(self.m_ar)
-        self.colors[self.m_ar] = 'white'
+        self.m_colors[self.m_ar] = 'white'
         
         
         self.m_aluminio = openmc.Material(name='Alúminio')
         self.m_aluminio.add_nuclide('Al27', 1, percent_type ='wo')
         self.m_aluminio.set_density('g/cm3', 2.7)
         self.Materials.append(self.m_aluminio)
-        self.colors[self.m_aluminio] = 'gray'
+        self.m_colors[self.m_aluminio] = 'gray'
         
         
         self.m_SS304 = openmc.Material(name='Aço INOX',)
@@ -229,9 +292,9 @@ class TrigaIprR1:
         self.m_SS304.add_element('Fe', 6.9687E-01, percent_type = 'wo')
         self.m_SS304.set_density('g/cm3', 7.92)
         self.Materials.append(self.m_SS304)
-        self.colors[self.m_SS304] = 'silver'
+        self.m_colors[self.m_SS304] = 'silver'
         
-        if(comb=='fresco'):
+        if(queimado==None):
             printv("################################################")
             printv("############ Definição dos Materiais ###########")
             printv("############       comb_fresco       ###########")
@@ -239,7 +302,8 @@ class TrigaIprR1:
             
             #Semente: Valores originais de cada elemento cobustível na data da compra.
             
-            self.m_comb = {}
+            self.m_comb = {} #Dicionário contendo os materiais de todos combustíveis
+
             #Número de série, Massa de ZrH (g), Massa de Urânio (g), Massa de U235 (g)
             #Elementos de alumínio. Comprados em 1960.
             self.m_comb[1314]   =  self.mat_comb_fresco('1314',   2252.84, 195.10, 38.65)
@@ -313,18 +377,40 @@ class TrigaIprR1:
             self.m_comb[6821]   =  self.mat_comb_fresco('6821TC', 2305.00, 193.00, 38.00)
             
             #Adicionar todos combustíveis na lista, e definir uma cor para eles
-            for material in self.m_comb.values():
-                self.Materials.append(material)
-                self.colors[material] = 'yellow'
-            
+            for key in self.m_comb:
+                self.Materials.append(self.m_comb[key])
 
-
-
-    def geometria_cilindrica(
-        self,
-        load = load.core1
-        ):
+                # Definindo cores do tipo de combustível:
+                ## Alumínio = Amarelo escuro
+                ## Inox     = Amarelo
+                ## Inox TC  = Amarelo claro
+                if key < 6000:
+                    self.m_colors[self.m_comb[key]] = 'dark yellow'
+                elif key == 6821:
+                    self.m_colors[self.m_comb[key]] = 'light yellow'
+                else:
+                    self.m_colors[self.m_comb[key]] = 'yellow'               
         
+        
+        else:
+            printv("################################################")
+            printv("############ Definição dos Materiais ###########")
+            printv("############      comb_queimado      ###########")
+            printv("################################################")
+            # Programar para importar a lista de materiais queimados do arquivo h5
+
+
+
+    def geometria(
+        self,
+        load = load.core1,
+        tipo_geometria = "cilindrica"
+        ):
+        printv("################################################")
+        printv("############ Definição de Geometria  ###########")
+        printv("############      comb_queimado      ###########")
+        printv("################################################")
+
         # Universos elementos que não se repetem
         universo_elemento_tuboCentralAgua       = openmc.Universe()
         universo_elemento_fonte                 = openmc.Universe()
@@ -358,58 +444,66 @@ class TrigaIprR1:
             universo_elemento_combustivel_inox      = openmc.Universe()
             universo_elemento_combustivel_inox.add_cell(celula_comb)
             return universo_elemento_combustivel_inox
+        
+        ## Elemento de inox instrumentado
+        def cria_universo_elemento_combustivel_inox_instrumentado(fill):
+            celula_comb = openmc.Cell()
+            celula_comb.fill = fill
+            universo_elemento_combustivel_inox      = openmc.Universe()
+            universo_elemento_combustivel_inox.add_cell(celula_comb)
+            return universo_elemento_combustivel_inox
             
 
 
         # Crie o dicionário de elementos, já com as coordenadas
-        elemento = cria_elementos_com_coordenadas()
+        elemento = cria_elementosCarregaveis_com_coordenadas(tipo_geometria)
 
         # Carregue o universo de cada elemento baseado em sua chave e o load
         # Esse procedimento gasta processamento e ocupa mais memória, mas é uma forma de verificação que o load está correto
-        chaves = list(elemento.keys())
-        for chave in chaves:
-            elemento[chave].load = load[chave]
-            if load[chave] == "água":
-                elemento[chave].universo = self.m_refrigerante #Por padrão, preencha só com material água
-            if load[chave] == "grafite":
-                elemento[chave].universo = cria_universo_elemento_grafite()
-            if load[chave] == "tubo_central_agua":
-                elemento[chave].universo = universo_elemento_tuboCentralAgua
-            if load[chave] == "fonte":
-                elemento[chave].universo = universo_elemento_fonte
-            if load[chave] == "terminal_pneumático_1":
-                elemento[chave].universo = universo_elemento_terminalPneumático1
-            if load[chave] == "barra_controle":
-                elemento[chave].universo = cria_universo_elemento_barraDeControle(0)
-            if type(load[chave]) == int:
-                if load[chave]>6000:
-                    elemento[chave].universo = cria_universo_elemento_combustivel(self.m_comb[load[chave]])
-                    elemento[chave].mat_combustivel = self.m_comb[load[chave]]
-                else:
-                    elemento[chave].universo = cria_universo_elemento_combustivel_inox(self.m_comb[load[chave]])
-                    elemento[chave].mat_combustivel = self.m_comb[load[chave]]
-        
+        for chave in elemento:                                                          # Itere sob todas as chaves do dicionário elemento
+            elemento[chave].load = load[chave]                                          # O valor de load contem o tipo do elemento carregável, salve ele no respectivo atributo
+            if load[chave] == "água":                                                   # Caso o tipo seja string "água"
+                elemento[chave].universo = self.m_refrigerante                          # Preencha só com material água
+            if load[chave] == "grafite":                                                # Caso o tipo seja string "grafite"
+                elemento[chave].universo = cria_universo_elemento_grafite()             # Preencha com o universo respectivo
+            if load[chave] == "tubo_central_agua":                                      # E assim sucessivamente
+                elemento[chave].universo = universo_elemento_tuboCentralAgua            #
+            if load[chave] == "fonte":                                                  #
+                elemento[chave].universo = universo_elemento_fonte                      #
+            if load[chave] == "terminal_pneumático_1":                                  #
+                elemento[chave].universo = universo_elemento_terminalPneumático1        #
+            if load[chave] == "barra_controle":                                         #
+                elemento[chave].universo = cria_universo_elemento_barraDeControle(0)    #
+            if type(load[chave]) == int:                                                # Caso o tipo seja inteira, significa que é um elemento combustível (número de série)
+                elemento[chave].mat_combustivel = self.m_comb[load[chave]]              # Salve o material do combustível no respectivo atributo
+                if load[chave]<2000:                                                    # Se o número de série for menor que 2000, significa que é do tipo alumínio
+                    elemento[chave].universo = cria_universo_elemento_combustivel(self.m_comb[load[chave]]) # Crie o universo do combustível de aumínio com seu respectivo material baseado no número de série
+                elif load[chave]>7000:                                                  # Numero de série for maior que 7000, significa que é aço inox
+                    elemento[chave].universo = cria_universo_elemento_combustivel_inox(self.m_comb[load[chave]]) # E assim sucessivamente
+                else:                                                                   # Caso não seja nenhuma das opções, então é o combustível instrumentado
+                    elemento[chave].universo = cria_universo_elemento_combustivel_inox_instrumentado(self.m_comb[load[chave]])
+                    
 
         # Geometria do núcleo
         ## Gerar uma célula a partir de um cilindro para cada elemento e gerar a região externa aos cilindros
         celulas_elemento = []
         regioes_externas_aos_pinos = []
-        for chave in chaves:
-            cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)    #Cria cilindro para ser a fronteira entre o universo_elemento e a água
-            regioes_externas_aos_pinos.append(+cilindro_elemento)                                   #Adiciona a região externa a esse cilindro na lista de regiões externas
+        for chave in elemento:
+            cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)    # Cria cilindro para ser a fronteira entre o universo_elemento e a água
+            regioes_externas_aos_pinos.append(+cilindro_elemento)                                   # Adiciona a região externa a esse cilindro na lista de regiões externas
             
-            celula_elemento = openmc.Cell()                         # Cria a célula para ser preenchida com o universo_elemento
-            celula_elemento.fill = elemento[chave].universo         # Preenche com o universo de acordo com a chave
-            celula_elemento.region = -cilindro_elemento             # A região da célula é interna ao cilindro
-            celulas_elemento.append(celula_elemento)                #Adiciona a lista de células
+            celula_elemento = openmc.Cell()                                                         # Cria a célula para ser preenchida com o universo_elemento
+            celula_elemento.fill = elemento[chave].universo                                         # Preenche com o universo de acordo com a chave
+            celula_elemento.region = -cilindro_elemento                                             # A região da célula é interna ao cilindro
+            celulas_elemento.append(celula_elemento)                                                # Adiciona a lista de células
         
-        for fora_do_pino in regioes_externas_aos_pinos:                             #Para cada região externa ao pino, de cada pica
-            região_externa_aos_pinos = região_externa_aos_pinos & fora_do_pino      #Adiciona à região_externa_aos_pinos a região externa a cada pino
+        for fora_do_pino in regioes_externas_aos_pinos:                                             # Para cada região externa ao pino, de cada pica
+            região_externa_aos_pinos = região_externa_aos_pinos & fora_do_pino                      # Adiciona à região_externa_aos_pinos a região externa a cada pino
         
-        cilindro_nucleo_ativo = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)    #Cria um cilindro delimitar o núcleo ativo
-        celula_refrigente_nucleo_ativo = openmc.Cell()                                              #Cria célula que contém os espaços entre os elementos
-        celula_refrigente_nucleo_ativo.fill = self.m_refrigerante                                   #Preenche com água (os espaços entre os elementos)
-        celula_refrigente_nucleo_ativo.region = +região_externa_aos_pinos -cilindro_nucleo_ativo    #Define a região com externa a todos elementos e interna ao cilindro que delimita o núcleo ativo
+        cilindro_nucleo_ativo = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)    # Cria um cilindro delimitar o núcleo ativo
+        celula_refrigente_nucleo_ativo = openmc.Cell()                                              # Cria célula que contém os espaços entre os elementos
+        celula_refrigente_nucleo_ativo.fill = self.m_refrigerante                                   # Preenche com água (os espaços entre os elementos)
+        celula_refrigente_nucleo_ativo.region = +região_externa_aos_pinos -cilindro_nucleo_ativo    # Define a região com externa a todos elementos e interna ao cilindro que delimita o núcleo ativo
         
         
         
@@ -421,6 +515,11 @@ class TrigaIprR1:
         self.Geometry = openmc.Geometry()
         self.Geometry.root_universe = universo_nucleo_ativo
         
+
+
+
+
+
 
 
     def configuracoes(
@@ -447,6 +546,14 @@ class TrigaIprR1:
         self.Settings.output = {'tallies': False} #Esta linha desabilita a geração do arquivo tallies.out
         printv(self.Settings)
 
+
+
+
+
+
+
+
+
     def plot2D_secao_transversal(
         self,
         geometria,
@@ -456,9 +563,9 @@ class TrigaIprR1:
         pixels=[5000,5000],
         origin=(0,0,0)
         ):
-        print("################################################")
-        print("############        Plot 2D         ############")
-        print("################################################")
+        printv("################################################")
+        printv("############        Plot 2D         ############")
+        printv("################################################")
         if plot:
             ############ Plotar Secão Transversal
             secao_transversal = openmc.Plot.from_geometry(geometria)
@@ -478,6 +585,14 @@ class TrigaIprR1:
             self.Geometry.export_to_xml()
             openmc.plot_geometry()
 
+
+
+
+
+
+
+
+
     def plot3D(
         self,
         geometria,
@@ -486,9 +601,9 @@ class TrigaIprR1:
         pixels=(500, 500, 500),
         origin=(0,0,0)
         ):
-        print("################################################")
-        print("############        Plot 3D         ############")
-        print("################################################")
+        printv("################################################")
+        printv("############        Plot 3D         ############")
+        printv("################################################")
         if plot:
             ############ Plotar em 3D
             plot_3d = openmc.Plot.from_geometry(geometria)
@@ -507,6 +622,18 @@ class TrigaIprR1:
             self.Materials.export_to_xml()
             self.Geometry.export_to_xml()
             openmc.voxel_to_vtk(plot_3d.filename+'.h5', plot_3d.filename)
+
+
+
+
+
+
+
+
+
+
+
+
 
     def simulacao_autovalor(self):
         printv("################################################")
