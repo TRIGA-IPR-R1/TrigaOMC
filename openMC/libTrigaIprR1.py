@@ -11,6 +11,7 @@ from datetime import datetime
 import numpy as np
 import math
 import matplotlib.pyplot as plt
+from dataclasses import dataclass
 
 import openmc
 
@@ -85,6 +86,7 @@ Função e classe para criar dicionário de objetos "elementos carregáveis" com
 """
 
 # Essa classe serve apenas para armazenar os dados dos elementos carregaveis de forma estruturada
+@dataclass
 class DadosElementosCarregaveis:
     # Coordenadas carteziana do elemento
     x: float
@@ -117,7 +119,7 @@ def cria_elementosCarregaveis_com_coordenadas(
     """
     
     elemento = {}                                                                   # Cria dicionário contendo todos elementos
-    elemento["A0"] = DadosElementosCarregaveis(                                     # O anel A (n_radial=0), somente existe 1 elemento, o A0, então o crie na posição central
+    elemento["A1"] = DadosElementosCarregaveis(                                     # O anel A (n_radial=0), somente existe 1 elemento, o A1, então o crie na posição central
                     r       = 0.0, 
                     theta   = 0.0, 
                     x       = 0.0, 
@@ -129,11 +131,9 @@ def cria_elementosCarregaveis_com_coordenadas(
             letra_anel = chr(65 + n_radial)                                         # Calcula a letra do respectivo anel (65 é o código ASCII para 'A', logo quando n_radial é 0 a letra é A, e assim sucessivamente)
             r = pitch * n_radial                                                    # Calcula raio de acordo com n_radial baseado no pitch
             qtd_elementos = 6 * n_radial                                            # Cada anel tem uma quantidade de elementos multiplo de 6, proporcial ao n_radial
-            if qtd_elementos == 0:                                                  # Com excessão do primeiro anel
-                qtd_elementos = 1                                                   # Que tem um único elemento (no IPR-R1 é o tubo central)
-            for n_elemento in range(qtd_elementos):                                 # Iterando sobre o número de elementos do respectivo anel
-                theta    = math.radians(90 + (360 / qtd_elementos) * n_elemento)    # Calcula coordenanda theta em radianos para cada elemento pertencente ao atual anel # Nota: Girando 90 graus para corresponder a orientação padrão
-                elemento[f"{letra_anel}{n_elemento}"] = DadosElementosCarregaveis(  # Cria objeto contendo os dados do respectivo elemento carregável
+            for n_elemento in range(0,qtd_elementos):                               # Iterando sobre o número de elementos do respectivo anel
+                theta    = math.radians(90 + (360 / qtd_elementos) * -n_elemento)   # Calcula coordenanda theta em radianos para cada elemento pertencente ao atual anel # Nota: Girando 90 graus para corresponder a orientação padrão # Nota2: A variável n_elemento tem que ser negativo para preencher no sentido horário
+                elemento[f"{letra_anel}{n_elemento+1}"] = DadosElementosCarregaveis(# Cria objeto contendo os dados do respectivo elemento carregável
                     r       = r,                                                    # Salvando as coordenadas polares no elemento
                     theta   = theta,
                     x       = r * math.cos(theta),                                  # Convertendo e salvando as coordenada cartezianas
@@ -153,7 +153,7 @@ def cria_elementosCarregaveis_com_coordenadas(
                 dx = pitch * math.cos(math.radians(angulo))                         # Calculando o vetor de deslocamento (dx, dy) para a aresta atual (dada pelo ângulo) com comprimento do pitch
                 dy = pitch * math.sin(math.radians(angulo))
                 for _ in range(n_radial):                                           # Caminhando n_radial vezes ao longo da aresta    #Nota: coincidemente n_radial é igual a quantidade de elementos em uma aresta
-                    elemento[f"{letra_anel}{n_elemento}"] = DadosElementosCarregaveis(      # Cria objeto contendo os dados do respectivo elemento carregável 
+                    elemento[f"{letra_anel}{n_elemento+1}"] = DadosElementosCarregaveis(      # Cria objeto contendo os dados do respectivo elemento carregável 
                         x       = x,                                                        # Salva a coordenada carteziana X com o valor atual da variável x
                         y       = y,                                                        # Salva a coordenada carteziana Y com o valor atual da variável y
                         r       = math.hypot(x, y),                                         # Converte x e y para a coordenada polar r
