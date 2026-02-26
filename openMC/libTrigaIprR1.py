@@ -190,7 +190,7 @@ class TrigaIprR1:
     def __init__(self):
         printv("Objeto iniciado.")
         self.materiais()
-        self.geometria_cilindrica()
+        self.geometria()
         self.configuracoes()
         
     def __del__(self):
@@ -242,7 +242,7 @@ class TrigaIprR1:
         printv("############     materiais_padrão    ###########")
         printv("################################################")
         
-        self.Materials = openmc.Materials()
+        self.lista_materiais = openmc.Materials()
         self.m_colors = {}
         
         self.m_refrigerante = openmc.Material(name='Água Leve')
@@ -252,9 +252,15 @@ class TrigaIprR1:
         self.m_refrigerante.add_nuclide('O17', 3.5857E-04, percent_type='wo')
         self.m_refrigerante.add_nuclide('O18', 1.9982E-03, percent_type='wo')
         self.m_refrigerante.set_density('g/cm3', 1)
-        self.Materials.append(self.m_refrigerante)
+        self.lista_materiais.append(self.m_refrigerante)
         self.m_colors[self.m_refrigerante] = 'blue'
         
+        self.m_grafite = openmc.Material(name='Grafite')
+        self.m_grafite.add_element('C', 1, percent_type = 'wo')
+        self.m_grafite.set_density('g/cm3', 2.15)
+        self.lista_materiais.append(self.m_grafite)
+        self.m_colors[self.m_grafite] = 'brown'
+
         
         self.m_ar = openmc.Material(name='Ar')
         self.m_ar.add_nuclide('N14',  7.7826E-01, percent_type='ao')
@@ -266,14 +272,14 @@ class TrigaIprR1:
         self.m_ar.add_nuclide('Ar38', 3.4177E-03, percent_type='ao')
         self.m_ar.add_nuclide('Ar40', 3.2467E-03, percent_type='ao')
         self.m_ar.set_density('g/cm3', 0.001225)
-        self.Materials.append(self.m_ar)
+        self.lista_materiais.append(self.m_ar)
         self.m_colors[self.m_ar] = 'white'
         
         
         self.m_aluminio = openmc.Material(name='Alúminio')
         self.m_aluminio.add_nuclide('Al27', 1, percent_type ='wo')
         self.m_aluminio.set_density('g/cm3', 2.7)
-        self.Materials.append(self.m_aluminio)
+        self.lista_materiais.append(self.m_aluminio)
         self.m_colors[self.m_aluminio] = 'gray'
         
         
@@ -291,7 +297,7 @@ class TrigaIprR1:
         self.m_SS304.add_element('N',  1.4000E-04, percent_type = 'wo')
         self.m_SS304.add_element('Fe', 6.9687E-01, percent_type = 'wo')
         self.m_SS304.set_density('g/cm3', 7.92)
-        self.Materials.append(self.m_SS304)
+        self.lista_materiais.append(self.m_SS304)
         self.m_colors[self.m_SS304] = 'silver'
         
         if(queimado==None):
@@ -378,16 +384,16 @@ class TrigaIprR1:
             
             #Adicionar todos combustíveis na lista, e definir uma cor para eles
             for key in self.m_comb:
-                self.Materials.append(self.m_comb[key])
+                self.lista_materiais.append(self.m_comb[key])
 
                 # Definindo cores do tipo de combustível:
                 ## Alumínio = Amarelo escuro
                 ## Inox     = Amarelo
                 ## Inox TC  = Amarelo claro
                 if key < 6000:
-                    self.m_colors[self.m_comb[key]] = 'dark yellow'
+                    self.m_colors[self.m_comb[key]] = 'yellow'
                 elif key == 6821:
-                    self.m_colors[self.m_comb[key]] = 'light yellow'
+                    self.m_colors[self.m_comb[key]] = 'yellow'
                 else:
                     self.m_colors[self.m_comb[key]] = 'yellow'               
         
@@ -411,67 +417,261 @@ class TrigaIprR1:
         printv("############      comb_queimado      ###########")
         printv("################################################")
 
+        #
         # Universos elementos que não se repetem
-        universo_elemento_tuboCentralAgua       = openmc.Universe()
-        universo_elemento_fonte                 = openmc.Universe()
-        universo_elemento_terminalPneumático1   = openmc.Universe()
+        #
 
+        def cria_universo_elemento_tuboCentralAgua():
+            #Dimensões do elemento Tubo Central Agua
+            tc_raio = 2
+            tc_esp = 0.5
+            tc_altura = 50
+            
+            # Definições das superfícies
+            tc_cilindro_ext = openmc.ZCylinder(r= tc_raio+tc_esp)
+            tc_cilindro_int = openmc.ZCylinder(r= tc_raio)
+            tc_plano_sup = openmc.ZPlane(z0=  tc_altura/2)
+            tc_plano_inf = openmc.ZPlane(z0= -tc_altura/2)
+            
+            # Definições das regiões
+            tc_regiao_interna = -tc_cilindro_ext & +tc_cilindro_int & -tc_plano_sup & +tc_plano_inf
+            tc_regiao_externa = ~tc_regiao_interna
+
+            # Definições das células e universo
+            universo_elemento_tuboCentralAgua           = openmc.Universe()
+
+            tc_celula = openmc.Cell(fill=self.m_aluminio, region=tc_regiao_interna)
+            universo_elemento_tuboCentralAgua.add_cell(tc_celula)
+
+            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=tc_regiao_externa)
+            universo_elemento_tuboCentralAgua.add_cell(extern_celula)
+            
+            # Retorno da função
+            return universo_elemento_tuboCentralAgua
+
+        def cria_universo_elemento_fonte():
+            #Dimensões do elemento Fonte
+            fonte_raio = 2
+            fonte_altura = 50
+            
+            # Definições das superfícies
+            fonte_cilindro = openmc.ZCylinder(r= fonte_raio)
+            fonte_plano_sup = openmc.ZPlane(z0=  fonte_altura/2)
+            fonte_plano_inf = openmc.ZPlane(z0= -fonte_altura/2)
+            
+            # Definições das regiões
+            fonte_regiao_interna = -fonte_cilindro & -fonte_plano_sup & +fonte_plano_inf
+            fonte_regiao_externa = ~fonte_regiao_interna
+
+            # Definições das células e universo
+            universo_elemento_fonte           = openmc.Universe()
+
+            fonte_celula = openmc.Cell(fill=self.m_aluminio, region=fonte_regiao_interna)
+            universo_elemento_fonte.add_cell(fonte_celula)
+
+            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=fonte_regiao_externa)
+            universo_elemento_fonte.add_cell(extern_celula)
+            
+            # Retorno da função
+            return universo_elemento_fonte
+
+        def cria_universo_elemento_terminalPneumático1():
+            #Dimensões do elemento Terminal Pneumático
+            tp_raio = 2
+            tp_esp = 0.5
+            tp_altura = 50
+            
+            # Definições das superfícies
+            tp_cilindro_ext = openmc.ZCylinder(r= tp_raio+tp_esp)
+            tp_cilindro_int = openmc.ZCylinder(r= tp_raio)
+            tp_plano_sup = openmc.ZPlane(z0=  tp_altura/2)
+            tp_plano_inf = openmc.ZPlane(z0= -tp_altura/2)
+            
+            # Definições das regiões
+            tp_regiao_interna = -tp_cilindro_ext & +tp_cilindro_int & -tp_plano_sup & +tp_plano_inf
+            tp_regiao_externa = ~tp_regiao_interna
+
+            # Definições das células e universo
+            universo_elemento_terminalPneumático1           = openmc.Universe()
+
+            tp_celula = openmc.Cell(fill=self.m_aluminio, region=tp_regiao_interna)
+            universo_elemento_terminalPneumático1.add_cell(tp_celula)
+
+            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=tp_regiao_externa)
+            universo_elemento_terminalPneumático1.add_cell(extern_celula)
+            
+            # Retorno da função
+            return universo_elemento_terminalPneumático1
+
+
+
+
+        #
         # Universos elementos que se repetem
-        ## Obs: o universo_elemento_grafite, como todos são exatamente iguais, poderia ser um universo único, mas isso causaria repetição dos IDs das células
+        #
+
         def cria_universo_elemento_grafite():
-            universo_elemento_grafite               = openmc.Universe()
-            return universo_elemento_grafite
+            #Dimensões do elemento combustível de alumínio
+            comb_raio = 2
+            comb_altura = 50
+            
+            # Definições das superfícies
+            comb_cilindro = openmc.ZCylinder(r= comb_raio)
+            comb_plano_sup = openmc.ZPlane(z0=  comb_altura/2)
+            comb_plano_inf = openmc.ZPlane(z0= -comb_altura/2)
+            
+            # Definições das regiões
+            comb_regiao_interna = -comb_cilindro & -comb_plano_sup & +comb_plano_inf
+            comb_regiao_externa = ~comb_regiao_interna
+
+            # Definições das células e universo
+            universo_elemento_combustivel           = openmc.Universe()
+
+            comb_celula = openmc.Cell(fill=self.m_grafite, region=comb_regiao_interna)
+            universo_elemento_combustivel.add_cell(comb_celula)
+
+            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=comb_regiao_externa)
+            universo_elemento_combustivel.add_cell(extern_celula)
+            
+            # Retorno da função
+            return universo_elemento_combustivel
 
         ## As barras de controle são geometricamente iguais, podendo variar suas posiçoes independentemente
         def cria_universo_elemento_barraDeControle(posição_barra):
-            celula_comb = openmc.Cell()
-            universo_elemento_barraDeControle       = openmc.Universe()
-            universo_elemento_barraDeControle.add_cell(celula_comb)
-            return universo_elemento_barraDeControle
+            #Dimensões do elemento combustível de alumínio
+            guia_raio = 2
+            guia_esp = 0.5
+            guia_altura = 50
+            
+            # Definições das superfícies
+            guia_cilindro_ext = openmc.ZCylinder(r= guia_raio+guia_esp)
+            guia_cilindro_int = openmc.ZCylinder(r= guia_raio)
+            guia_plano_sup = openmc.ZPlane(z0=  guia_altura/2)
+            guia_plano_inf = openmc.ZPlane(z0= -guia_altura/2)
+            
+            # Definições das regiões
+            guia_regiao_interna = -guia_cilindro_ext & +guia_cilindro_int & -guia_plano_sup & +guia_plano_inf
+            guia_regiao_externa = ~guia_regiao_interna
+
+            # Definições das células e universo
+            universo_elemento_combustivel           = openmc.Universe()
+
+            guia_celula = openmc.Cell(fill=self.m_aluminio, region=guia_regiao_interna)
+            universo_elemento_combustivel.add_cell(guia_celula)
+
+            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=guia_regiao_externa)
+            universo_elemento_combustivel.add_cell(extern_celula)
+            
+            # Retorno da função
+            return universo_elemento_combustivel
         
         ## Cada elemento combustível pode ter uma composição diferente
         def cria_universo_elemento_combustivel(fill):
-            celula_comb = openmc.Cell()
-            celula_comb.fill = fill
+            #Dimensões do elemento combustível de alumínio
+            comb_raio = 2
+            comb_altura = 50
+            
+            # Definições das superfícies
+            comb_cilindro = openmc.ZCylinder(r= comb_raio)
+            comb_plano_sup = openmc.ZPlane(z0=  comb_altura/2)
+            comb_plano_inf = openmc.ZPlane(z0= -comb_altura/2)
+            
+            # Definições das regiões
+            comb_regiao_interna = -comb_cilindro & -comb_plano_sup & +comb_plano_inf
+            comb_regiao_externa = ~comb_regiao_interna
+
+            # Definições das células e universo
             universo_elemento_combustivel           = openmc.Universe()
-            universo_elemento_combustivel.add_cell(celula_comb)
+
+            comb_celula = openmc.Cell(fill=fill, region=comb_regiao_interna)
+            universo_elemento_combustivel.add_cell(comb_celula)
+
+            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=comb_regiao_externa)
+            universo_elemento_combustivel.add_cell(extern_celula)
+            
+            # Retorno da função
             return universo_elemento_combustivel
         
         ## Os combustíveis de inox tem uma geometria ligeiramente diferente, e não tem absorvedores
         def cria_universo_elemento_combustivel_inox(fill):
-            celula_comb = openmc.Cell()
-            celula_comb.fill = fill
-            universo_elemento_combustivel_inox      = openmc.Universe()
-            universo_elemento_combustivel_inox.add_cell(celula_comb)
+            #Dimensões do elemento combustível de alumínio
+            comb_raio = 2
+            comb_altura = 50
+            
+            # Definições das superfícies
+            comb_cilindro = openmc.ZCylinder(r= comb_raio)
+            comb_plano_sup = openmc.ZPlane(z0=  comb_altura/2)
+            comb_plano_inf = openmc.ZPlane(z0= -comb_altura/2)
+            
+            # Definições das regiões
+            comb_regiao_interna = -comb_cilindro & -comb_plano_sup & +comb_plano_inf
+            comb_regiao_externa = ~comb_regiao_interna
+
+            # Definições das células e universo
+            universo_elemento_combustivel_inox           = openmc.Universe()
+
+            comb_celula = openmc.Cell(fill=fill, region=comb_regiao_interna)
+            universo_elemento_combustivel_inox.add_cell(comb_celula)
+
+            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=comb_regiao_externa)
+            universo_elemento_combustivel_inox.add_cell(extern_celula)
+            
+            # Retorno da função
             return universo_elemento_combustivel_inox
         
         ## Elemento de inox instrumentado
         def cria_universo_elemento_combustivel_inox_instrumentado(fill):
-            celula_comb = openmc.Cell()
-            celula_comb.fill = fill
-            universo_elemento_combustivel_inox      = openmc.Universe()
-            universo_elemento_combustivel_inox.add_cell(celula_comb)
-            return universo_elemento_combustivel_inox
+            #Dimensões do elemento combustível de alumínio
+            comb_raio = 2
+            comb_altura = 50
+            
+            # Definições das superfícies
+            comb_cilindro = openmc.ZCylinder(r= comb_raio)
+            comb_plano_sup = openmc.ZPlane(z0=  comb_altura/2)
+            comb_plano_inf = openmc.ZPlane(z0= -comb_altura/2)
+            
+            # Definições das regiões
+            comb_regiao_interna = -comb_cilindro & -comb_plano_sup & +comb_plano_inf
+            comb_regiao_externa = ~comb_regiao_interna
+
+            # Definições das células e universo
+            universo_elemento_combustivel_inox_instrumentado           = openmc.Universe()
+
+            comb_celula = openmc.Cell(fill=fill, region=comb_regiao_interna)
+            universo_elemento_combustivel_inox_instrumentado.add_cell(comb_celula)
+
+            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=comb_regiao_externa)
+            universo_elemento_combustivel_inox_instrumentado.add_cell(extern_celula)
+            
+            # Retorno da função
+            return universo_elemento_combustivel_inox_instrumentado
             
 
 
+
+
+
+        #
+        # Código para carregar o reator conforme arquivo load
+        #
+
         # Crie o dicionário de elementos, já com as coordenadas
-        elemento = cria_elementosCarregaveis_com_coordenadas(tipo_geometria)
+        elemento = cria_elementosCarregaveis_com_coordenadas(tipo_geometria, pitch=6)
 
         # Carregue o universo de cada elemento baseado em sua chave e o load
         # Esse procedimento gasta processamento e ocupa mais memória, mas é uma forma de verificação que o load está correto
         for chave in elemento:                                                          # Itere sob todas as chaves do dicionário elemento
             elemento[chave].load = load[chave]                                          # O valor de load contem o tipo do elemento carregável, salve ele no respectivo atributo
-            if load[chave] == "água":                                                   # Caso o tipo seja string "água"
+            if load[chave] == "água" or load[chave] == "agua":                          # Caso o tipo seja string "água"
                 elemento[chave].universo = self.m_refrigerante                          # Preencha só com material água
             if load[chave] == "grafite":                                                # Caso o tipo seja string "grafite"
                 elemento[chave].universo = cria_universo_elemento_grafite()             # Preencha com o universo respectivo
             if load[chave] == "tubo_central_agua":                                      # E assim sucessivamente
-                elemento[chave].universo = universo_elemento_tuboCentralAgua            #
+                elemento[chave].universo = cria_universo_elemento_tuboCentralAgua()     #
             if load[chave] == "fonte":                                                  #
-                elemento[chave].universo = universo_elemento_fonte                      #
-            if load[chave] == "terminal_pneumático_1":                                  #
-                elemento[chave].universo = universo_elemento_terminalPneumático1        #
+                elemento[chave].universo = cria_universo_elemento_fonte()               #
+            if load[chave] == "terminal_pneumático_1" or load[chave] == "terminal_pneumatico_1":#
+                elemento[chave].universo = cria_universo_elemento_terminalPneumático1() #
             if load[chave] == "barra_controle":                                         #
                 elemento[chave].universo = cria_universo_elemento_barraDeControle(0)    #
             if type(load[chave]) == int:                                                # Caso o tipo seja inteira, significa que é um elemento combustível (número de série)
@@ -484,27 +684,37 @@ class TrigaIprR1:
                     elemento[chave].universo = cria_universo_elemento_combustivel_inox_instrumentado(self.m_comb[load[chave]])
                     
 
+
+
+
+
+
+
+
+
+
         # Geometria do núcleo
         ## Gerar uma célula a partir de um cilindro para cada elemento e gerar a região externa aos cilindros
         celulas_elemento = []
         regioes_externas_aos_pinos = []
         for chave in elemento:
-            cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)    # Cria cilindro para ser a fronteira entre o universo_elemento e a água
+            cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=3)    # Cria cilindro para ser a fronteira entre o universo_elemento e a água
             regioes_externas_aos_pinos.append(+cilindro_elemento)                                   # Adiciona a região externa a esse cilindro na lista de regiões externas
             
             celula_elemento = openmc.Cell()                                                         # Cria a célula para ser preenchida com o universo_elemento
             celula_elemento.fill = elemento[chave].universo                                         # Preenche com o universo de acordo com a chave
             celula_elemento.region = -cilindro_elemento                                             # A região da célula é interna ao cilindro
+            celula_elemento.translation = (elemento[chave].x, elemento[chave].y, 0.0)               # Translade o universo para a posição correta
             celulas_elemento.append(celula_elemento)                                                # Adiciona a lista de células
         
-        for fora_do_pino in regioes_externas_aos_pinos:                                             # Para cada região externa ao pino, de cada pica
+        região_externa_aos_pinos = regioes_externas_aos_pinos[0]                                    # Inicializar a variável com a primeira região da lista
+        for fora_do_pino in regioes_externas_aos_pinos[1:]:                                         # Para cada região externa ao pino, de cada pino
             região_externa_aos_pinos = região_externa_aos_pinos & fora_do_pino                      # Adiciona à região_externa_aos_pinos a região externa a cada pino
         
-        cilindro_nucleo_ativo = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=1)    # Cria um cilindro delimitar o núcleo ativo
+        cilindro_nucleo_ativo = openmc.ZCylinder(r=100,boundary_type="vacuum")                      # Cria um cilindro delimitar o núcleo ativo
         celula_refrigente_nucleo_ativo = openmc.Cell()                                              # Cria célula que contém os espaços entre os elementos
         celula_refrigente_nucleo_ativo.fill = self.m_refrigerante                                   # Preenche com água (os espaços entre os elementos)
-        celula_refrigente_nucleo_ativo.region = +região_externa_aos_pinos -cilindro_nucleo_ativo    # Define a região com externa a todos elementos e interna ao cilindro que delimita o núcleo ativo
-        
+        celula_refrigente_nucleo_ativo.region = região_externa_aos_pinos & -cilindro_nucleo_ativo   # Define a região com externa a todos elementos e interna ao cilindro que delimita o núcleo ativo
         
         
         universo_nucleo_ativo = openmc.Universe()
@@ -556,9 +766,9 @@ class TrigaIprR1:
 
     def plot2D_secao_transversal(
         self,
-        geometria,
-        colors,
-        basis="xz",
+        geometria=None,
+        filename=None,
+        basis="xy",
         width=[150,150],
         pixels=[5000,5000],
         origin=(0,0,0)
@@ -567,21 +777,26 @@ class TrigaIprR1:
         printv("############        Plot 2D         ############")
         printv("################################################")
         if plot:
+            if geometria is None:
+                geometria = self.Geometry
+            if filename is None:
+                filename = 'plot_' + basis + '_' + str(width) + '_' + str(pixels) + '_' + str(origin)
+
             ############ Plotar Secão Transversal
             secao_transversal = openmc.Plot.from_geometry(geometria)
             secao_transversal.type = 'slice'
             secao_transversal.basis = basis
             secao_transversal.width = width
             secao_transversal.origin = origin
-            secao_transversal.filename = 'plot_' + basis + '_' + str(width) + '_' + str(pixels) + '_' + str(origin)
+            secao_transversal.filename = filename
             secao_transversal.pixels = pixels
             secao_transversal.color_by = 'material'
-            secao_transversal.colors = colors
+            secao_transversal.colors = self.m_colors
         
             ############ Exportar Plots e Plotar
-            plotagem = openmc.Plots(secao_transversal)
+            plotagem = openmc.Plots([secao_transversal])
             plotagem.export_to_xml()
-            self.Materials.export_to_xml()
+            self.lista_materiais.export_to_xml()
             self.Geometry.export_to_xml()
             openmc.plot_geometry()
 
@@ -619,7 +834,7 @@ class TrigaIprR1:
             plotagem = openmc.Plots(plot_3d)
             plotagem.export_to_xml()  
             openmc.plot_geometry()
-            self.Materials.export_to_xml()
+            self.lista_materiais.export_to_xml()
             self.Geometry.export_to_xml()
             openmc.voxel_to_vtk(plot_3d.filename+'.h5', plot_3d.filename)
 
@@ -641,7 +856,7 @@ class TrigaIprR1:
         printv("#########        de autovalores        #########")
         printv("################################################")
         if simu:
-            self.Materials.export_to_xml()
+            self.lista_materiais.export_to_xml()
             self.Geometry.export_to_xml()
             self.Settings.export_to_xml()
             openmc.run()
