@@ -1,4 +1,123 @@
-core1 = {}
+#!/bin/python
+
+#######################################################################
+####                                                               ####
+####          Biblioteca contendo as configurações de cada         ####
+####                  núcleo do TRIGA IPR-R1                       ####
+####                                                               ####
+####    Centro de Desenvolvimento da Tecnologia Nuclear - CDTN     ####
+####           Serviço de Tecnologia de Reatores - SETRE           ####
+####                  Thalles Oliveira Campagnani                  ####
+####                                                               ####
+#######################################################################
+
+# Opções de carregamento:
+#   - 'tubo_central_agua':         Elemento tubo central contendo água
+#   - 'terminal_pneumático_1':     Elemento terminal pneumático 1
+#   - 'fonte':                     Elemento fonte de neutrons
+#   - 'grafite':                   Elemento refletor de grafite
+#   - 'barra_controle':            Elemento barra de controle
+#   - 'agua':                      Sem elemento, automaticamente preenchido com água
+#   - None:                        Também sem elemento, automaticamente preenchido com água
+#   - [num_inteiro]:               Elemento combustível, sendo o número inteiro correspondente ao número de série do combustível
+#
+#
+#
+#
+#
+#
+# Posições carregaveis do Reator TRIGA IPR-R1
+# Obs: Geometria cilíndridrica representada de forma hexagonal
+#
+#
+#											F1										
+#																					
+#									F30				F2								
+#																					
+#							F29				E1				F3						
+#																					
+#					F28				E24				E2				F4				
+#																					
+#			F27				E23				D1				E3				F5		
+#																					
+#	F26				E22				D17				D2				E4				F6
+#																					
+#			E21				D16				C1				D3				E5		
+#																					
+#	F25				D15				C12				C2				D4				F7
+#																					
+#			E20				C11				B1				C3				E6		
+#																					
+#	F24				D14				B6				B2				D5				F8
+#																					
+#			E19				C10				A1				C4				E7		
+#																					
+#	F23				D13				B5				B3				D6				F9
+#																					
+#			E18				C9				B4				C5				E8		
+#																					
+#	F22				D12				C8				C6				D7				F10
+#																					
+#			E17				D11				C7				D8				E9		
+#																					
+#	F21				E16				D10				D9								F11
+#																	E10				
+#			F20				E15				D10				E11				F12		
+#																					
+#					F19				E14				E12				F13				
+#																					
+#							F18				E13				F14						
+#																					
+#									F17				F15								
+#																					
+#											F16										
+#
+#
+#
+#
+#
+# Posições do "Hack" na lateral da piscina (para decaimento):
+#       1
+#       2
+#       3
+#       Etc...
+#
+#
+#
+#
+#
+# Instruções para declarar a configuração de um núcleo:
+#
+#   1° - Declarar um dicionário do python contendo como chaves as posições contidas no desenho hexagonal acima.
+#   2° - Declarar uma lista do python contendo os combustíveis que já foram fabricados, porém não inseridos no núcleo (ou que foram inseridos, mas retirados).
+#        Obs: considerar os elementos combustíveis nos poços de decaimento como posicionados no hack.
+#        Obs2: não há a necessidade de posicionar elementos de grafite no hack para fins de simulação, a não ser que o material deles sejam marcado como queimáveis para algum estudo específico.
+#
+#   Exemplo:
+#           nome_nucleo        = {}
+#           nome_nucleo['A1']  = 'tubo_central_agua'
+#           nome_nucleo['B1']  = 1314
+#           nome_nucleo['B2']  = 1188
+#           ...
+#           nome_nucleo['D1']  = 'barra_controle'
+#           ...
+#           nome_nucleo['F1']  = 'grafite'
+#           nome_nucleo['F2']  = 'grafite'
+#           nome_nucleo['F3']  = 'grafite'
+#           ...
+#           
+#           nome_hack = []
+#           hack1.append(1147)
+#           hack1.append(1179)
+
+
+
+
+
+
+
+# Núcleo 1: Primeira configução do TRIGA IPR-R1, o qual atingiu sua primeira criticalidade em 1960
+core1        = {}
 core1['A1']  = 'tubo_central_agua'
 core1['B1']  = 1314
 core1['B2']  = 1188
@@ -77,6 +196,8 @@ core1['F14'] = 'grafite'
 core1['F15'] = 'grafite'
 core1['F16'] = 'barra_controle'
 core1['F17'] = 'grafite'
+core1['F18'] = 'grafite'
+core1['F19'] = 'grafite'
 core1['F20'] = 'grafite'
 core1['F21'] = 'grafite'
 core1['F22'] = 'grafite'
