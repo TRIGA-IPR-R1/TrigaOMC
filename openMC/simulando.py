@@ -1,4 +1,5 @@
 #!/usr/bin/python
+#!/bin/python
 
 #######################################################################
 ####                                                               ####
@@ -26,9 +27,14 @@ libTrigaIprR1.mkdir(voltar=False, nome="resultados", data=True, cpinputs=True)
 
 # Criando reator
 triga = libTrigaIprR1.TrigaIprR1()
+#triga.geometria(tipo_geometria="hexagonal")
 
-
-libTrigaIprR1.mkdir(voltar=False, nome="keff", data=False, cpinputs=False)
+# Plotanto geometria
+libTrigaIprR1.mkdir(voltar=False, nome="plots", data=False)
+triga.plot2D_secao_transversal()
+triga.plot2D_secao_transversal(basis="xz")
+triga.plot2D_secao_transversal(basis="yz")
 
 # Simulação de autovalor (keff, fulga, etc)
+libTrigaIprR1.mkdir(voltar=True, nome="keff", data=False)
 triga.simulacao_autovalor()
