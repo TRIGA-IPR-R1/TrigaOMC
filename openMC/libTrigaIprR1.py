@@ -14,6 +14,8 @@ import matplotlib.pyplot as plt
 from dataclasses import dataclass
 
 import openmc
+import openmc.model
+import openmc.deplete
 
 import libTrigaIprR1_load as load
 
@@ -215,13 +217,19 @@ class TrigaIprR1:
             hidretação          = Massa de somente Hidrogênio (g)
         """
 
-        combustivel = openmc.Material(name = 'comb_' + num_serie)
+        combustivel = openmc.Material(name = 'comb_' + str(num_serie))
         combustivel.add_nuclide('U235',     percent = massa_u235,                  percent_type = "wo") #Nota: é definido o percentural com base na massa. A massa usada na simulação é dada pela densidade e volume.
         combustivel.add_nuclide('U238',     percent = massa_uranio-massa_u235,     percent_type = "wo")
         combustivel.add_element('Zr',       percent = massa_zirconio-hidretação,   percent_type = "wo")
         combustivel.add_element('H',        percent = hidretação,                  percent_type = "wo")
         combustivel.set_density('g/cm3',    densidade)
 
+        combustivel.depletable = True
+        if(num_serie>2000):
+            combustivel.volume = 100
+        else:
+            combustivel.volume = 100
+        
         return combustivel
         
     def materiais(
@@ -312,90 +320,75 @@ class TrigaIprR1:
 
             #Número de série, Massa de ZrH (g), Massa de Urânio (g), Massa de U235 (g)
             #Elementos de alumínio. Comprados em 1960.
-            self.m_comb[1314]   =  self.mat_comb_fresco('1314',   2252.84, 195.10, 38.65)
-            self.m_comb[1188]   =  self.mat_comb_fresco('1188',   2240.47, 194.47, 38.52)
-            self.m_comb[1289]   =  self.mat_comb_fresco('1289',   2246.71, 194.12, 38.46)
-            self.m_comb[1286]   =  self.mat_comb_fresco('1286',   2243.74, 193.19, 38.27)
-            self.m_comb[1230]   =  self.mat_comb_fresco('1230',   2256.41, 193.15, 38.26)
-            self.m_comb[1297]   =  self.mat_comb_fresco('1297',   2247.20, 192.59, 38.15)
-            self.m_comb[1298]   =  self.mat_comb_fresco('1298',   2252.94, 191.05, 37.85)
-            self.m_comb[7194]   =  self.mat_comb_fresco('7194',   2293.00, 193.00, 38.00)
-            self.m_comb[1315]   =  self.mat_comb_fresco('1315',   2250.96, 190.66, 37.77)
-            self.m_comb[7192]   =  self.mat_comb_fresco('7192',   2292.00, 192.00, 38.00)
-            self.m_comb[1235]   =  self.mat_comb_fresco('1235',   2249.97, 190.35, 37.71)
-            self.m_comb[1222]   =  self.mat_comb_fresco('1222',   2250.27, 190.15, 37.67)
-            self.m_comb[7193]   =  self.mat_comb_fresco('7193',   2297.00, 193.00, 38.00)
-            self.m_comb[1351]   =  self.mat_comb_fresco('1351',   2247.30, 189.67, 37.57)
-            self.m_comb[7191]   =  self.mat_comb_fresco('7191',   2299.00, 193.00, 38.00)
-            self.m_comb[1311]   =  self.mat_comb_fresco('1311',   2247.79, 189.49, 37.54)
-            self.m_comb[1269]   =  self.mat_comb_fresco('1269',   2258.19, 191.04, 37.85)
-            self.m_comb[1254]   =  self.mat_comb_fresco('1254',   2255.42, 189.46, 37.53)
-            self.m_comb[1206]   =  self.mat_comb_fresco('1206',   2256.61, 189.10, 37.46)
-            self.m_comb[1303]   =  self.mat_comb_fresco('1303',   2253.14, 189.04, 37.45)
-            self.m_comb[1287]   =  self.mat_comb_fresco('1287',   2253.43, 188.84, 37.41)
-            self.m_comb[1296]   =  self.mat_comb_fresco('1296',   2266.11, 188.77, 37.40)
-            self.m_comb[1282]   =  self.mat_comb_fresco('1282',   2251.75, 188.70, 37.38)
-            self.m_comb[1343]   =  self.mat_comb_fresco('1343',   2251.75, 188.47, 37.34)
-            self.m_comb[1196]   =  self.mat_comb_fresco('1196',   2247.79, 188.36, 37.31)
-            self.m_comb[1212]   =  self.mat_comb_fresco('1212',   2249.97, 190.35, 37.71)
-            self.m_comb[1199]   =  self.mat_comb_fresco('1199',   2250.17, 188.34, 37.31)
-            self.m_comb[1347]   =  self.mat_comb_fresco('1347',   2248.19, 188.17, 37.28)
-            self.m_comb[1220]   =  self.mat_comb_fresco('1220',   2239.58, 187.90, 37.22)
-            self.m_comb[1218]   =  self.mat_comb_fresco('1218',   2255.02, 187.84, 37.21)
-            self.m_comb[1209]   =  self.mat_comb_fresco('1209',   2251.46, 187.72, 37.19)
-            self.m_comb[1280]   =  self.mat_comb_fresco('1280',   2253.43, 187.71, 37.19)
-            self.m_comb[1350]   =  self.mat_comb_fresco('1350',   2245.72, 187.74, 37.19)
-            self.m_comb[1272]   =  self.mat_comb_fresco('1272',   2257.69, 186.94, 37.03)
-            self.m_comb[1348]   =  self.mat_comb_fresco('1348',   2256.61, 186.62, 36.97)
-            self.m_comb[1197]   =  self.mat_comb_fresco('1197',   2247.50, 186.54, 36.95)
-            self.m_comb[ 989]   =  self.mat_comb_fresco('0989',   2251.50, 186.42, 36.93)
-            self.m_comb[1228]   =  self.mat_comb_fresco('1228',   2244.82, 186.10, 36.87)
-            self.m_comb[1173]   =  self.mat_comb_fresco('1173',   2246.51, 186.01, 36.85)
-            self.m_comb[1205]   =  self.mat_comb_fresco('1205',   2252.25, 185.81, 36.81)
-            self.m_comb[1195]   =  self.mat_comb_fresco('1195',   2244.53, 184.73, 36.60)
-            self.m_comb[1028]   =  self.mat_comb_fresco('1028',   2255.32, 184.71, 36.59)
-            self.m_comb[1130]   =  self.mat_comb_fresco('1130',   2219.08, 184.18, 36.49)
-            self.m_comb[1342]   =  self.mat_comb_fresco('1342',   2256.41, 184.12, 36.47)
-            self.m_comb[1025]   =  self.mat_comb_fresco('1025',   2246.90, 183.12, 36.28)
-            self.m_comb[1128]   =  self.mat_comb_fresco('1128',   2248.09, 183.22, 36.30)
-            self.m_comb[1114]   =  self.mat_comb_fresco('1114',   2247.60, 185.65, 36.78)
-            self.m_comb[1219]   =  self.mat_comb_fresco('1219',   2249.38, 185.57, 36.76)
-            self.m_comb[1301]   =  self.mat_comb_fresco('1301',   2254.23, 185.52, 36.75)
-            self.m_comb[1171]   =  self.mat_comb_fresco('1171',   2250.76, 185.46, 36.74)
-            self.m_comb[1224]   =  self.mat_comb_fresco('1224',   2263.63, 185.39, 36.73)
-            self.m_comb[1179]   =  self.mat_comb_fresco('1179',   2257.79, 182.20, 36.09)
-            self.m_comb[1214]   =  self.mat_comb_fresco('1214',   2244.03, 191.19, 37.87)
-            self.m_comb[1012]   =  self.mat_comb_fresco('1012',   2241.85, 184.93, 36.64)
-            self.m_comb[1162]   =  self.mat_comb_fresco('1162',   2237.60, 184.38, 36.53)
-            self.m_comb[1223]   =  self.mat_comb_fresco('1223',   2250.76, 184.34, 36.52)
-            self.m_comb[1147]   =  self.mat_comb_fresco('1147',   2241.46, 182.46, 36.15)
-            self.m_comb[1005]   =  self.mat_comb_fresco('1005',   2225.02, 185.34, 36.72)
-            self.m_comb[1137]   =  self.mat_comb_fresco('1137',   2248.59, 185.06, 36.66)
-            self.m_comb[1330]   =  self.mat_comb_fresco('1330',   2258.49, 190.84, 37.81)
-            self.m_comb[1345]   =  self.mat_comb_fresco('1345',   2281.06, 190.47, 37.73)
-            self.m_comb[1263]   =  self.mat_comb_fresco('1263',   2252.84, 190.14, 37.67)
-            self.m_comb[1274]   =  self.mat_comb_fresco('1274',   2243.74, 189.60, 37.56)
+            self.m_comb[1314]   =  self.mat_comb_fresco(1314,   2252.84, 195.10, 38.65)
+            self.m_comb[1188]   =  self.mat_comb_fresco(1188,   2240.47, 194.47, 38.52)
+            self.m_comb[1289]   =  self.mat_comb_fresco(1289,   2246.71, 194.12, 38.46)
+            self.m_comb[1286]   =  self.mat_comb_fresco(1286,   2243.74, 193.19, 38.27)
+            self.m_comb[1230]   =  self.mat_comb_fresco(1230,   2256.41, 193.15, 38.26)
+            self.m_comb[1297]   =  self.mat_comb_fresco(1297,   2247.20, 192.59, 38.15)
+            self.m_comb[1298]   =  self.mat_comb_fresco(1298,   2252.94, 191.05, 37.85)
+            self.m_comb[7194]   =  self.mat_comb_fresco(7194,   2293.00, 193.00, 38.00)
+            self.m_comb[1315]   =  self.mat_comb_fresco(1315,   2250.96, 190.66, 37.77)
+            self.m_comb[7192]   =  self.mat_comb_fresco(7192,   2292.00, 192.00, 38.00)
+            self.m_comb[1235]   =  self.mat_comb_fresco(1235,   2249.97, 190.35, 37.71)
+            self.m_comb[1222]   =  self.mat_comb_fresco(1222,   2250.27, 190.15, 37.67)
+            self.m_comb[7193]   =  self.mat_comb_fresco(7193,   2297.00, 193.00, 38.00)
+            self.m_comb[1351]   =  self.mat_comb_fresco(1351,   2247.30, 189.67, 37.57)
+            self.m_comb[7191]   =  self.mat_comb_fresco(7191,   2299.00, 193.00, 38.00)
+            self.m_comb[1311]   =  self.mat_comb_fresco(1311,   2247.79, 189.49, 37.54)
+            self.m_comb[1269]   =  self.mat_comb_fresco(1269,   2258.19, 191.04, 37.85)
+            self.m_comb[1254]   =  self.mat_comb_fresco(1254,   2255.42, 189.46, 37.53)
+            self.m_comb[1206]   =  self.mat_comb_fresco(1206,   2256.61, 189.10, 37.46)
+            self.m_comb[1303]   =  self.mat_comb_fresco(1303,   2253.14, 189.04, 37.45)
+            self.m_comb[1287]   =  self.mat_comb_fresco(1287,   2253.43, 188.84, 37.41)
+            self.m_comb[1296]   =  self.mat_comb_fresco(1296,   2266.11, 188.77, 37.40)
+            self.m_comb[1282]   =  self.mat_comb_fresco(1282,   2251.75, 188.70, 37.38)
+            self.m_comb[1343]   =  self.mat_comb_fresco(1343,   2251.75, 188.47, 37.34)
+            self.m_comb[1196]   =  self.mat_comb_fresco(1196,   2247.79, 188.36, 37.31)
+            self.m_comb[1212]   =  self.mat_comb_fresco(1212,   2249.97, 190.35, 37.71)
+            self.m_comb[1199]   =  self.mat_comb_fresco(1199,   2250.17, 188.34, 37.31)
+            self.m_comb[1347]   =  self.mat_comb_fresco(1347,   2248.19, 188.17, 37.28)
+            self.m_comb[1220]   =  self.mat_comb_fresco(1220,   2239.58, 187.90, 37.22)
+            self.m_comb[1218]   =  self.mat_comb_fresco(1218,   2255.02, 187.84, 37.21)
+            self.m_comb[1209]   =  self.mat_comb_fresco(1209,   2251.46, 187.72, 37.19)
+            self.m_comb[1280]   =  self.mat_comb_fresco(1280,   2253.43, 187.71, 37.19)
+            self.m_comb[1350]   =  self.mat_comb_fresco(1350,   2245.72, 187.74, 37.19)
+            self.m_comb[1272]   =  self.mat_comb_fresco(1272,   2257.69, 186.94, 37.03)
+            self.m_comb[1348]   =  self.mat_comb_fresco(1348,   2256.61, 186.62, 36.97)
+            self.m_comb[1197]   =  self.mat_comb_fresco(1197,   2247.50, 186.54, 36.95)
+            self.m_comb[ 989]   =  self.mat_comb_fresco( 989,   2251.50, 186.42, 36.93)
+            self.m_comb[1228]   =  self.mat_comb_fresco(1228,   2244.82, 186.10, 36.87)
+            self.m_comb[1173]   =  self.mat_comb_fresco(1173,   2246.51, 186.01, 36.85)
+            self.m_comb[1205]   =  self.mat_comb_fresco(1205,   2252.25, 185.81, 36.81)
+            self.m_comb[1195]   =  self.mat_comb_fresco(1195,   2244.53, 184.73, 36.60)
+            self.m_comb[1028]   =  self.mat_comb_fresco(1028,   2255.32, 184.71, 36.59)
+            self.m_comb[1130]   =  self.mat_comb_fresco(1130,   2219.08, 184.18, 36.49)
+            self.m_comb[1342]   =  self.mat_comb_fresco(1342,   2256.41, 184.12, 36.47)
+            self.m_comb[1025]   =  self.mat_comb_fresco(1025,   2246.90, 183.12, 36.28)
+            self.m_comb[1128]   =  self.mat_comb_fresco(1128,   2248.09, 183.22, 36.30)
+            self.m_comb[1114]   =  self.mat_comb_fresco(1114,   2247.60, 185.65, 36.78)
+            self.m_comb[1219]   =  self.mat_comb_fresco(1219,   2249.38, 185.57, 36.76)
+            self.m_comb[1301]   =  self.mat_comb_fresco(1301,   2254.23, 185.52, 36.75)
+            self.m_comb[1171]   =  self.mat_comb_fresco(1171,   2250.76, 185.46, 36.74)
+            self.m_comb[1224]   =  self.mat_comb_fresco(1224,   2263.63, 185.39, 36.73)
+            self.m_comb[1179]   =  self.mat_comb_fresco(1179,   2257.79, 182.20, 36.09)
+            self.m_comb[1214]   =  self.mat_comb_fresco(1214,   2244.03, 191.19, 37.87)
+            self.m_comb[1012]   =  self.mat_comb_fresco(1012,   2241.85, 184.93, 36.64)
+            self.m_comb[1162]   =  self.mat_comb_fresco(1162,   2237.60, 184.38, 36.53)
+            self.m_comb[1223]   =  self.mat_comb_fresco(1223,   2250.76, 184.34, 36.52)
+            self.m_comb[1147]   =  self.mat_comb_fresco(1147,   2241.46, 182.46, 36.15)
+            self.m_comb[1005]   =  self.mat_comb_fresco(1005,   2225.02, 185.34, 36.72)
+            self.m_comb[1137]   =  self.mat_comb_fresco(1137,   2248.59, 185.06, 36.66)
+            self.m_comb[1330]   =  self.mat_comb_fresco(1330,   2258.49, 190.84, 37.81)
+            self.m_comb[1345]   =  self.mat_comb_fresco(1345,   2281.06, 190.47, 37.73)
+            self.m_comb[1263]   =  self.mat_comb_fresco(1263,   2252.84, 190.14, 37.67)
+            self.m_comb[1274]   =  self.mat_comb_fresco(1274,   2243.74, 189.60, 37.56)
             # Elementos de Inox. Comprados em 1972.
-            self.m_comb[7198]   =  self.mat_comb_fresco('7198',   2297.00, 193.00, 38.00)
-            self.m_comb[7197]   =  self.mat_comb_fresco('7197',   2297.00, 193.00, 38.00)
-            self.m_comb[7196]   =  self.mat_comb_fresco('7196',   2294.00, 193.00, 38.00)
-            self.m_comb[7195]   =  self.mat_comb_fresco('7195',   2295.00, 193.00, 38.00)
-            self.m_comb[6821]   =  self.mat_comb_fresco('6821TC', 2305.00, 193.00, 38.00)
-            
-            #Adicionar todos combustíveis na lista, e definir uma cor para eles
-            for key in self.m_comb:
-                self.lista_materiais.append(self.m_comb[key])
-
-                # Definindo cores do tipo de combustível:
-                ## Alumínio = Amarelo escuro
-                ## Inox     = Amarelo
-                ## Inox TC  = Amarelo claro
-                if key < 6000:
-                    self.m_colors[self.m_comb[key]] = 'yellow'
-                elif key == 6821:
-                    self.m_colors[self.m_comb[key]] = 'yellow'
-                else:
-                    self.m_colors[self.m_comb[key]] = 'yellow'               
+            self.m_comb[7198]   =  self.mat_comb_fresco(7198,   2297.00, 193.00, 38.00)
+            self.m_comb[7197]   =  self.mat_comb_fresco(7197,   2297.00, 193.00, 38.00)
+            self.m_comb[7196]   =  self.mat_comb_fresco(7196,   2294.00, 193.00, 38.00)
+            self.m_comb[7195]   =  self.mat_comb_fresco(7195,   2295.00, 193.00, 38.00)
+            self.m_comb[6821]   =  self.mat_comb_fresco(6821,   2305.00, 193.00, 38.00) # Combustível instrumentado
         
         
         else:
@@ -403,8 +396,37 @@ class TrigaIprR1:
             printv("############ Definição dos Materiais ###########")
             printv("############      comb_queimado      ###########")
             printv("################################################")
-            # Programar para importar a lista de materiais queimados do arquivo h5
+            
+            # Carregando os materiais queimados 
+            resultados = openmc.deplete.Results(queimado)
+            
+            # Exportando apenas os materiais do último passo de queima (índice -1)
+            materiais_queimados = resultados.export_to_materials(-1)
+            
+            # Criando dicionário de combustíveis
+            self.m_comb = {}
+            
+            # Filtrando apenas os materiais combustíveis e os adicionando ao dicionário
+            for mat in materiais_queimados:
+                if mat.name.startswith("comb_"): 
+                    self.m_comb[int(mat.name.split('_')[1])] = mat # Extrai o número de série do nome e salva no dicionário m_comb
+                        
+            printv(f"Foram carregados {len(self.m_comb)} elementos combustíveis queimados do arquivo {queimado}!")
 
+        #Adicionar todos combustíveis na lista de materiais, e definir uma cor para eles
+        for key in self.m_comb:
+            self.lista_materiais.append(self.m_comb[key])
+
+            # Definindo cores do tipo de combustível:
+            ## Alumínio = Amarelo escuro
+            ## Inox     = Amarelo
+            ## Inox TC  = Amarelo claro
+            if key < 6000:
+                self.m_colors[self.m_comb[key]] = 'yellow'
+            elif key == 6821:
+                self.m_colors[self.m_comb[key]] = 'yellow'
+            else:
+                self.m_colors[self.m_comb[key]] = 'yellow'               
 
 
     def geometria(
@@ -862,4 +884,34 @@ class TrigaIprR1:
             openmc.run()
 
     
-    
+    ################################################
+    ###########         Depleção        ############
+    ################################################
+
+    def simulacao_queima(
+            self,
+            timesteps=[1],
+            power=250e3,
+            chain_file="/opt/nuclear-data/chain_endfb71_pwr.xml",
+            timestep_units='d',
+            diff=False,
+            results_file=""):
+        print("################################################")
+        print("###########         Depleção        ############")
+        print("################################################")
+        if simu:
+
+            # Set up depletion operator
+            model = openmc.model.Model(self.Geometry, self.lista_materiais, self.Settings)
+            if diff:
+                model.differentiate_depletable_mats(diff_volume_method = 'divide equally')
+
+            if not os.path.exists(results_file): #Inicia uma queima nova
+                op = openmc.deplete.CoupledOperator(model, chain_file, diff_burnable_mats=diff)
+            else: #Continua uma queima de onde parou
+                results = openmc.deplete.Results.from_hdf5(results_file)
+                op = openmc.deplete.CoupledOperator(model, chain_file, diff_burnable_mats=diff, prev_results=results)
+            
+            # Deplete 
+            CF4 = openmc.deplete.CF4Integrator(operator=op, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+            CF4.integrate()

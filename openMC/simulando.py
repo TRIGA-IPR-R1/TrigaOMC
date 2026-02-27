@@ -1,4 +1,3 @@
-#!/usr/bin/python
 #!/bin/python
 
 #######################################################################
@@ -13,7 +12,7 @@
 import libTrigaIprR1
 
 libTrigaIprR1.simu = True     #Altere conforme necessidade
-libTrigaIprR1.plot = True     #Altere conforme necessidade
+libTrigaIprR1.plot = False     #Altere conforme necessidade
 libTrigaIprR1.verbose = True  #Altere confrome necessidade
 
 if __name__ != '__main__': #Caso seja importado como biblioteca
@@ -37,4 +36,8 @@ triga.plot2D_secao_transversal(basis="yz")
 
 # Simulação de autovalor (keff, fulga, etc)
 libTrigaIprR1.mkdir(voltar=True, nome="keff", data=False)
-triga.simulacao_autovalor()
+#triga.simulacao_autovalor()
+
+# Simulação de queima
+libTrigaIprR1.mkdir(voltar=True, nome="queima", data=False)
+triga.simulacao_queima()
