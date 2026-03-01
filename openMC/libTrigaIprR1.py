@@ -217,24 +217,67 @@ class TrigaIprR1:
             hidretação          = Massa de somente Hidrogênio (g)
         """
 
-        combustivel = openmc.Material(name = 'comb_' + str(num_serie))
-        combustivel.add_nuclide('U235',     percent = massa_u235,                  percent_type = "wo") #Nota: é definido o percentural com base na massa. A massa usada na simulação é dada pela densidade e volume.
-        combustivel.add_nuclide('U238',     percent = massa_uranio-massa_u235,     percent_type = "wo")
-        combustivel.add_element('Zr',       percent = massa_zirconio-hidretação,   percent_type = "wo")
-        combustivel.add_element('H',        percent = hidretação,                  percent_type = "wo")
-        combustivel.set_density('g/cm3',    densidade)
-
-        combustivel.depletable = True
-        if(num_serie>2000):
-            combustivel.volume = 100
+        if(num_serie>2000): #Número de série dos elementos combustíveis de alumínio
+            r_ext = 10
+            r_int = 0
+            comprimento = 20
         else:
-            combustivel.volume = 100
+            r_ext = 10
+            r_int = 1
+            comprimento = 20
         
-        return combustivel
+        # Pré-alocando a matriz tridimensional
+        combustiveis_fatias = [
+            [
+                [None for _ in range(self.comb_divisions_z)] 
+                for _ in range(self.comb_divisions_theta)
+            ] 
+            for _ in range(self.comb_divisions_r)
+        ]
+        
+        # Espessura de cada fatia radial e altura de cada fatia em Z
+        delta_r = (r_ext - r_int) / self.comb_divisions_r
+        delta_z = comprimento / self.comb_divisions_z
+
+        # Iterando sob cada fatia
+        for r in range(1, self.comb_divisions_r + 1):
+            for theta in range(1, self.comb_divisions_theta + 1):
+                for z in range(1, self.comb_divisions_z + 1):
+                    
+                    # Criando fatia de material combustível
+                    combustivel_fatia = openmc.Material(name = f'comb_{num_serie}_{r}_{theta}_{z}')
+                    combustivel_fatia.add_nuclide('U235',     percent = massa_u235,                  percent_type = "wo")
+                    combustivel_fatia.add_nuclide('U238',     percent = massa_uranio-massa_u235,     percent_type = "wo")
+                    combustivel_fatia.add_element('Zr',       percent = massa_zirconio-hidretação,   percent_type = "wo")
+                    combustivel_fatia.add_element('H',        percent = hidretação,                  percent_type = "wo")
+                    combustivel_fatia.set_density('g/cm3',    densidade)
+                    combustivel_fatia.depletable = True
+
+                    # --- CALCULANDO O VOLUME DA FATIA ---
+                    
+                    # Raios referentes a essa fatia específica
+                    r_inner_fatia = r_int + (r - 1) * delta_r
+                    r_outer_fatia = r_int + r * delta_r
+                    
+                    # Área da base da coroa circular desta fatia
+                    area_coroa = math.pi * (r_outer_fatia**2 - r_inner_fatia**2)
+                    
+                    # Volume = Área da coroa * altura (delta_z) / divisões_em_theta
+                    volume = area_coroa * delta_z / self.comb_divisions_theta
+                    
+                    combustivel_fatia.volume = volume
+
+                    # Salvar material na lista (índices começam no 0)
+                    combustiveis_fatias[r-1][theta-1][z-1] = combustivel_fatia
+        
+        return combustiveis_fatias
         
     def materiais(
         self,
         queimado=None,
+        comb_divisions_r=1,
+        comb_divisions_theta=1,
+        comb_divisions_z=1,
         ):
         """
         Função para definir todos materiais da simulação.
@@ -244,6 +287,7 @@ class TrigaIprR1:
                 
         Args:
             queimado (str, optional): None ou 'path_to_h5'
+            comb_divisions (int, optional): Qtd de divizões em coordenadas cilíndricas
         """
         printv("################################################")
         printv("############ Definição dos Materiais ###########")
@@ -289,6 +333,12 @@ class TrigaIprR1:
         self.m_aluminio.set_density('g/cm3', 2.7)
         self.lista_materiais.append(self.m_aluminio)
         self.m_colors[self.m_aluminio] = 'gray'
+
+        self.m_zirconio = openmc.Material(name='Zirconio')
+        self.m_zirconio.add_element('Zr', 1, percent_type ='wo')
+        self.m_zirconio.set_density('g/cm3', 6.511)
+        self.lista_materiais.append(self.m_zirconio)
+        self.m_colors[self.m_zirconio] = 'red'
         
         
         self.m_SS304 = openmc.Material(name='Aço INOX',)
@@ -314,6 +364,10 @@ class TrigaIprR1:
             printv("############       comb_fresco       ###########")
             printv("################################################")
             
+            self.comb_divisions_r = comb_divisions_r
+            self.comb_divisions_theta  = comb_divisions_theta
+            self.comb_divisions_z  = comb_divisions_z
+
             #Semente: Valores originais de cada elemento cobustível na data da compra.
             
             self.m_comb = {} #Dicionário contendo os materiais de todos combustíveis
@@ -327,14 +381,10 @@ class TrigaIprR1:
             self.m_comb[1230]   =  self.mat_comb_fresco(1230,   2256.41, 193.15, 38.26)
             self.m_comb[1297]   =  self.mat_comb_fresco(1297,   2247.20, 192.59, 38.15)
             self.m_comb[1298]   =  self.mat_comb_fresco(1298,   2252.94, 191.05, 37.85)
-            self.m_comb[7194]   =  self.mat_comb_fresco(7194,   2293.00, 193.00, 38.00)
             self.m_comb[1315]   =  self.mat_comb_fresco(1315,   2250.96, 190.66, 37.77)
-            self.m_comb[7192]   =  self.mat_comb_fresco(7192,   2292.00, 192.00, 38.00)
             self.m_comb[1235]   =  self.mat_comb_fresco(1235,   2249.97, 190.35, 37.71)
             self.m_comb[1222]   =  self.mat_comb_fresco(1222,   2250.27, 190.15, 37.67)
-            self.m_comb[7193]   =  self.mat_comb_fresco(7193,   2297.00, 193.00, 38.00)
             self.m_comb[1351]   =  self.mat_comb_fresco(1351,   2247.30, 189.67, 37.57)
-            self.m_comb[7191]   =  self.mat_comb_fresco(7191,   2299.00, 193.00, 38.00)
             self.m_comb[1311]   =  self.mat_comb_fresco(1311,   2247.79, 189.49, 37.54)
             self.m_comb[1269]   =  self.mat_comb_fresco(1269,   2258.19, 191.04, 37.85)
             self.m_comb[1254]   =  self.mat_comb_fresco(1254,   2255.42, 189.46, 37.53)
@@ -384,10 +434,14 @@ class TrigaIprR1:
             self.m_comb[1263]   =  self.mat_comb_fresco(1263,   2252.84, 190.14, 37.67)
             self.m_comb[1274]   =  self.mat_comb_fresco(1274,   2243.74, 189.60, 37.56)
             # Elementos de Inox. Comprados em 1972.
-            self.m_comb[7198]   =  self.mat_comb_fresco(7198,   2297.00, 193.00, 38.00)
-            self.m_comb[7197]   =  self.mat_comb_fresco(7197,   2297.00, 193.00, 38.00)
-            self.m_comb[7196]   =  self.mat_comb_fresco(7196,   2294.00, 193.00, 38.00)
+            self.m_comb[7191]   =  self.mat_comb_fresco(7191,   2299.00, 193.00, 38.00)
+            self.m_comb[7192]   =  self.mat_comb_fresco(7192,   2292.00, 192.00, 38.00)
+            self.m_comb[7193]   =  self.mat_comb_fresco(7193,   2297.00, 193.00, 38.00)
+            self.m_comb[7194]   =  self.mat_comb_fresco(7194,   2293.00, 193.00, 38.00)
             self.m_comb[7195]   =  self.mat_comb_fresco(7195,   2295.00, 193.00, 38.00)
+            self.m_comb[7196]   =  self.mat_comb_fresco(7196,   2294.00, 193.00, 38.00)
+            self.m_comb[7197]   =  self.mat_comb_fresco(7197,   2297.00, 193.00, 38.00)
+            self.m_comb[7198]   =  self.mat_comb_fresco(7198,   2297.00, 193.00, 38.00)
             self.m_comb[6821]   =  self.mat_comb_fresco(6821,   2305.00, 193.00, 38.00) # Combustível instrumentado
         
         
@@ -409,30 +463,63 @@ class TrigaIprR1:
             # Filtrando apenas os materiais combustíveis e os adicionando ao dicionário
             for mat in materiais_queimados:
                 if mat.name.startswith("comb_"): 
-                    self.m_comb[int(mat.name.split('_')[1])] = mat # Extrai o número de série do nome e salva no dicionário m_comb
-                        
+                    # Separando o nome do combustível em partes: ['comb', '7191', '1', '1', '1']
+                    partes = mat.name.split('_')
+                    
+                    num_serie = int(partes[1])
+                    r_idx     = int(partes[2])
+                    theta_idx = int(partes[3])
+                    z_idx     = int(partes[4])
+                    
+                    # Se o elemento combustível ainda não existe no dicionário, cria a matriz 3D
+                    if num_serie not in self.m_comb:
+                        self.m_comb[num_serie] = [
+                            [
+                                [None for _ in range(self.comb_divisions_z)] 
+                                for _ in range(self.comb_divisions_theta)
+                            ] 
+                            for _ in range(self.comb_divisions_r)
+                        ]
+                    
+                    # Salva a fatia de material na posição correta da matriz 3D
+                    self.m_comb[num_serie][r_idx-1][theta_idx-1][z_idx-1] = mat
+
+
             printv(f"Foram carregados {len(self.m_comb)} elementos combustíveis queimados do arquivo {queimado}!")
 
         #Adicionar todos combustíveis na lista de materiais, e definir uma cor para eles
-        for key in self.m_comb:
-            self.lista_materiais.append(self.m_comb[key])
-
+        for key, matriz_3d in self.m_comb.items():
             # Definindo cores do tipo de combustível:
             ## Alumínio = Amarelo escuro
             ## Inox     = Amarelo
             ## Inox TC  = Amarelo claro
             if key < 6000:
-                self.m_colors[self.m_comb[key]] = 'yellow'
+                cor = 'yellow'
             elif key == 6821:
-                self.m_colors[self.m_comb[key]] = 'yellow'
+                cor = 'yellow'
             else:
-                self.m_colors[self.m_comb[key]] = 'yellow'               
-
+                cor = 'yellow'
+                 
+            # Desempacotando a matriz 3D para acessar cada fatia (material)
+            for lista_r in matriz_3d:
+                for lista_theta in lista_r:
+                    for mat_fatia in lista_theta:
+                        
+                        # Garantindo que a fatia não é nula antes de adicionar
+                        if mat_fatia is not None:
+                            # Adicionando o material da fatia específica na lista geral do OpenMC
+                            self.lista_materiais.append(mat_fatia)
+                            
+                            # Atribuindo a cor à fatia específica
+                            self.m_colors[mat_fatia] = cor
 
     def geometria(
         self,
         load = load.core1,
-        tipo_geometria = "cilindrica"
+        tipo_geometria = "cilindrica",
+        posição_barra_controle = 0,
+        posição_barra_regulação = 0,
+        posição_barra_segurança = 0,
         ):
         printv("################################################")
         printv("############ Definição de Geometria  ###########")
@@ -519,7 +606,7 @@ class TrigaIprR1:
             tp_celula = openmc.Cell(fill=self.m_aluminio, region=tp_regiao_interna)
             universo_elemento_terminalPneumático1.add_cell(tp_celula)
 
-            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=tp_regiao_externa)
+            extern_celula = openmc.Cell(fill=self.m_ar, region=tp_regiao_externa)
             universo_elemento_terminalPneumático1.add_cell(extern_celula)
             
             # Retorno da função
@@ -587,87 +674,111 @@ class TrigaIprR1:
             # Retorno da função
             return universo_elemento_combustivel
         
-        ## Cada elemento combustível pode ter uma composição diferente
-        def cria_universo_elemento_combustivel(fill):
-            #Dimensões do elemento combustível de alumínio
-            comb_raio = 2
-            comb_altura = 50
+        ## Cada elemento combustível pode ter uma composição diferente e ser fatiado de um jeito diferente
+        def cria_universo_elemento_combustivel(fill, tipoComb="aluminio"):
+            """
+            tipoComb="aluminio"
+            tipoComb="inox"
+            tipoComb="inox_instrumentado"
+            """
+            # Dimensões do elemento combustível
+            if tipoComb=="aluminio":
+                comb_raio_int = 1.1
+                comb_raio_ext = 2.0
+                comb_altura   = 50.0
+            elif tipoComb=="inox" or tipoComb=="inox_instrumentado":
+                comb_raio_int = 1.0  
+                comb_raio_ext = 2.0
+                comb_altura   = 50.0
+            else:
+                exit(0)
             
-            # Definições das superfícies
-            comb_cilindro = openmc.ZCylinder(r= comb_raio)
-            comb_plano_sup = openmc.ZPlane(z0=  comb_altura/2)
-            comb_plano_inf = openmc.ZPlane(z0= -comb_altura/2)
+            # Descobrindo a quantidade de divisões com base no tamanho da matriz 3D
+            divs_r = len(fill)
+            divs_theta = len(fill[0])
+            divs_z = len(fill[0][0])
             
-            # Definições das regiões
-            comb_regiao_interna = -comb_cilindro & -comb_plano_sup & +comb_plano_inf
-            comb_regiao_externa = ~comb_regiao_interna
+            universo_elemento_combustivel = openmc.Universe()
 
-            # Definições das células e universo
-            universo_elemento_combustivel           = openmc.Universe()
-
-            comb_celula = openmc.Cell(fill=fill, region=comb_regiao_interna)
-            universo_elemento_combustivel.add_cell(comb_celula)
-
-            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=comb_regiao_externa)
-            universo_elemento_combustivel.add_cell(extern_celula)
+            # ==========================================
+            # 1. CRIANDO AS SUPERFÍCIES DE CORTE
+            # ==========================================
             
-            # Retorno da função
+            # Cortes em Z (Planos Horizontais)
+            z_planes = []
+            z_min = -comb_altura / 2.0
+            delta_z = comb_altura / divs_z
+            for i in range(divs_z + 1):
+                z_planes.append(openmc.ZPlane(z0 = z_min + i * delta_z))
+
+            # Cortes em R (Cilindros Concêntricos a partir do raio interno)
+            r_cyls = []
+            delta_r = (comb_raio_ext - comb_raio_int) / divs_r
+            for i in range(divs_r + 1):
+                r_cyls.append(openmc.ZCylinder(r = comb_raio_int + i * delta_r))
+
+            # Cortes em Theta (Planos Azimutais passando pelo centro)
+            theta_planes = []
+            if divs_theta > 1:
+                delta_theta = 2 * math.pi / divs_theta
+                for i in range(divs_theta):
+                    phi = i * delta_theta
+                    a = -math.sin(phi)
+                    b = math.cos(phi)
+                    theta_planes.append(openmc.Plane(a=a, b=b, c=0, d=0))
+
+            # ==========================================
+            # 2. CONSTRUINDO AS CÉLULAS FATIADAS (COMBUSTÍVEL)
+            # ==========================================
+            
+            for r in range(divs_r):
+                for t in range(divs_theta):
+                    for z in range(divs_z):
+                        
+                        regiao_z = +z_planes[z] & -z_planes[z+1]
+                        regiao_r = +r_cyls[r] & -r_cyls[r+1]
+                            
+                        if divs_theta == 1:
+                            regiao_theta = None
+                        elif divs_theta == 2:
+                            if t == 0:
+                                regiao_theta = +theta_planes[0]
+                            else:
+                                regiao_theta = -theta_planes[0]
+                        else:
+                            regiao_theta = +theta_planes[t] & -theta_planes[(t + 1) % divs_theta]
+
+                        regiao_celula = regiao_r & regiao_z
+                        if regiao_theta is not None:
+                            regiao_celula &= regiao_theta
+                            
+                        material_fatia = fill[r][t][z]
+                        celula_fatia = openmc.Cell(fill=material_fatia, region=regiao_celula)
+                        universo_elemento_combustivel.add_cell(celula_fatia)
+
+
+            # ==========================================
+            # 3. DEFININDO O PINO CENTRAL E A REGIÃO EXTERNA
+            # ==========================================
+            
+            # Pino Central: Região interna do primeiro cilindro (comb_raio_int)
+            # Limitada também pela altura do combustível (z_planes)
+            regiao_pino_central = -r_cyls[0] & +z_planes[0] & -z_planes[-1]
+            celula_pino_central = openmc.Cell(fill=self.m_zirconio, region=regiao_pino_central)
+            universo_elemento_combustivel.add_cell(celula_pino_central)
+            
+            # Região Externa (Refrigerante): Tudo que está fora do cilindro mais externo
+            # ou acima/abaixo dos planos Z (complemento do cilindro maciço total)
+            regiao_cilindro_total = -r_cyls[-1] & +z_planes[0] & -z_planes[-1]
+            regiao_externa = ~regiao_cilindro_total
+            
+            celula_externa = openmc.Cell(fill=self.m_refrigerante, region=regiao_externa)
+            universo_elemento_combustivel.add_cell(celula_externa)
+            
             return universo_elemento_combustivel
         
-        ## Os combustíveis de inox tem uma geometria ligeiramente diferente, e não tem absorvedores
-        def cria_universo_elemento_combustivel_inox(fill):
-            #Dimensões do elemento combustível de alumínio
-            comb_raio = 2
-            comb_altura = 50
-            
-            # Definições das superfícies
-            comb_cilindro = openmc.ZCylinder(r= comb_raio)
-            comb_plano_sup = openmc.ZPlane(z0=  comb_altura/2)
-            comb_plano_inf = openmc.ZPlane(z0= -comb_altura/2)
-            
-            # Definições das regiões
-            comb_regiao_interna = -comb_cilindro & -comb_plano_sup & +comb_plano_inf
-            comb_regiao_externa = ~comb_regiao_interna
 
-            # Definições das células e universo
-            universo_elemento_combustivel_inox           = openmc.Universe()
 
-            comb_celula = openmc.Cell(fill=fill, region=comb_regiao_interna)
-            universo_elemento_combustivel_inox.add_cell(comb_celula)
-
-            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=comb_regiao_externa)
-            universo_elemento_combustivel_inox.add_cell(extern_celula)
-            
-            # Retorno da função
-            return universo_elemento_combustivel_inox
-        
-        ## Elemento de inox instrumentado
-        def cria_universo_elemento_combustivel_inox_instrumentado(fill):
-            #Dimensões do elemento combustível de alumínio
-            comb_raio = 2
-            comb_altura = 50
-            
-            # Definições das superfícies
-            comb_cilindro = openmc.ZCylinder(r= comb_raio)
-            comb_plano_sup = openmc.ZPlane(z0=  comb_altura/2)
-            comb_plano_inf = openmc.ZPlane(z0= -comb_altura/2)
-            
-            # Definições das regiões
-            comb_regiao_interna = -comb_cilindro & -comb_plano_sup & +comb_plano_inf
-            comb_regiao_externa = ~comb_regiao_interna
-
-            # Definições das células e universo
-            universo_elemento_combustivel_inox_instrumentado           = openmc.Universe()
-
-            comb_celula = openmc.Cell(fill=fill, region=comb_regiao_interna)
-            universo_elemento_combustivel_inox_instrumentado.add_cell(comb_celula)
-
-            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=comb_regiao_externa)
-            universo_elemento_combustivel_inox_instrumentado.add_cell(extern_celula)
-            
-            # Retorno da função
-            return universo_elemento_combustivel_inox_instrumentado
-            
 
 
 
@@ -686,24 +797,28 @@ class TrigaIprR1:
             elemento[chave].load = load[chave]                                          # O valor de load contem o tipo do elemento carregável, salve ele no respectivo atributo
             if load[chave] == "água" or load[chave] == "agua":                          # Caso o tipo seja string "água"
                 elemento[chave].universo = self.m_refrigerante                          # Preencha só com material água
-            if load[chave] == "grafite":                                                # Caso o tipo seja string "grafite"
+            elif load[chave] == "grafite":                                              # Caso o tipo seja string "grafite"
                 elemento[chave].universo = cria_universo_elemento_grafite()             # Preencha com o universo respectivo
-            if load[chave] == "tubo_central_agua":                                      # E assim sucessivamente
+            elif load[chave] == "tubo_central_agua":                                    # E assim sucessivamente
                 elemento[chave].universo = cria_universo_elemento_tuboCentralAgua()     #
-            if load[chave] == "fonte":                                                  #
+            elif load[chave] == "fonte":                                                #
                 elemento[chave].universo = cria_universo_elemento_fonte()               #
-            if load[chave] == "terminal_pneumático_1" or load[chave] == "terminal_pneumatico_1":#
+            elif load[chave] == "terminal_pneumático_1" or load[chave] == "terminal_pneumatico_1":#
                 elemento[chave].universo = cria_universo_elemento_terminalPneumático1() #
-            if load[chave] == "barra_controle":                                         #
-                elemento[chave].universo = cria_universo_elemento_barraDeControle(0)    #
-            if type(load[chave]) == int:                                                # Caso o tipo seja inteira, significa que é um elemento combustível (número de série)
+            elif load[chave] == "barra_regulação" or load[chave] == "barra_regulacao":  #
+                elemento[chave].universo = cria_universo_elemento_barraDeControle(posição_barra_regulação)#
+            elif load[chave] == "barra_segurança" or load[chave] == "barra_seguranca":  #
+                elemento[chave].universo = cria_universo_elemento_barraDeControle(posição_barra_segurança)#
+            elif load[chave] == "barra_controle":                                       #
+                elemento[chave].universo = cria_universo_elemento_barraDeControle(posição_barra_controle)#
+            elif type(load[chave]) == int:                                              # Caso o tipo seja inteira, significa que é um elemento combustível (número de série)
                 elemento[chave].mat_combustivel = self.m_comb[load[chave]]              # Salve o material do combustível no respectivo atributo
                 if load[chave]<2000:                                                    # Se o número de série for menor que 2000, significa que é do tipo alumínio
                     elemento[chave].universo = cria_universo_elemento_combustivel(self.m_comb[load[chave]]) # Crie o universo do combustível de aumínio com seu respectivo material baseado no número de série
                 elif load[chave]>7000:                                                  # Numero de série for maior que 7000, significa que é aço inox
-                    elemento[chave].universo = cria_universo_elemento_combustivel_inox(self.m_comb[load[chave]]) # E assim sucessivamente
+                    elemento[chave].universo = cria_universo_elemento_combustivel(self.m_comb[load[chave]], tipoComb="inox") # E assim sucessivamente
                 else:                                                                   # Caso não seja nenhuma das opções, então é o combustível instrumentado
-                    elemento[chave].universo = cria_universo_elemento_combustivel_inox_instrumentado(self.m_comb[load[chave]])
+                    elemento[chave].universo = cria_universo_elemento_combustivel(self.m_comb[load[chave]], tipoComb="inox_instrumentado")
                     
 
 
@@ -801,6 +916,7 @@ class TrigaIprR1:
         if plot:
             if geometria is None:
                 geometria = self.Geometry
+
             if filename is None:
                 filename = 'plot_' + basis + '_' + str(width) + '_' + str(pixels) + '_' + str(origin)
 
@@ -894,24 +1010,94 @@ class TrigaIprR1:
             power=250e3,
             chain_file="/opt/nuclear-data/chain_endfb71_pwr.xml",
             timestep_units='d',
-            diff=False,
-            results_file=""):
+            continuar="",
+            precisao=1,
+            precisao_extra=False
+            ):
         print("################################################")
-        print("###########         Depleção        ############")
+        print("###########        Depleção         ############")
         print("################################################")
+
+        # CoupledOperator Vs. IndependentOperator
+        ## O operador acoplado trabalha junto com o OpenMC, que simula fluxo, taxas de reações, etc, e isso é usado pelas equações de Bateman, juntamente com a cadeia de decaimento, para calcular a nova composição.
+        ## Já com operador independente é necessário passar manualmente as matrizes de fluxo e seções de choque microscópicas.
+        ##
+        ## Obs: Quando passado potência 0, o operador acoplado ignora a execução do openmc e calcula só o decaimento
+
+        # Somente simula se a variável simu estiver definida com True
         if simu:
 
-            # Set up depletion operator
-            model = openmc.model.Model(self.Geometry, self.lista_materiais, self.Settings)
-            if diff:
-                model.differentiate_depletable_mats(diff_volume_method = 'divide equally')
+            # Cria operador acoplado
+            if not os.path.exists(continuar): #Inicia uma queima nova
+                operador = openmc.deplete.CoupledOperator(
+                    model=openmc.model.Model(self.Geometry, self.lista_materiais, self.Settings),
+                    chain_file=chain_file
+                    )
+            else: # Para continuar uma queima interrompida de onde parou
+                operador = openmc.deplete.CoupledOperator(
+                    model=openmc.model.Model(self.Geometry, self.lista_materiais, self.Settings),
+                    chain_file=chain_file,
+                    prev_results=openmc.deplete.Results.from_hdf5(continuar)
+                    )
 
-            if not os.path.exists(results_file): #Inicia uma queima nova
-                op = openmc.deplete.CoupledOperator(model, chain_file, diff_burnable_mats=diff)
-            else: #Continua uma queima de onde parou
-                results = openmc.deplete.Results.from_hdf5(results_file)
-                op = openmc.deplete.CoupledOperator(model, chain_file, diff_burnable_mats=diff, prev_results=results)
             
-            # Deplete 
-            CF4 = openmc.deplete.CF4Integrator(operator=op, timesteps=timesteps, power=power, timestep_units=timestep_units) 
-            CF4.integrate()
+            # Seleciona o tipo de integrador de acordo com a precisão desejada
+            if precisao==1:
+                """
+                Métodos de Passo Único
+                    PredictorIntegrator: É a abordagem mais básica (método de Euler).
+                    Pega nas taxas de reação calculadas no início do passo de tempo e assume que elas permanecem constantes até ao fim desse passo.
+                    Requer apenas uma simulação de transporte por passo, sendo o mais rápido, mas o menos preciso, especialmente se os passos de tempo forem longos.
+                """
+                integrador = openmc.deplete.PredictorIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+            
+            elif precisao==2:
+                """
+                Métodos de Ponto Médio e Correção
+                    CECMIntegrator (Constant Extrapolation / Constant Midpoint): Este método usa as taxas do início para prever a composição na metade do tempo (t/2).
+                    De seguida, corre uma nova simulação de transporte nesse ponto médio para obter taxas de reação atualizadas, e usa essas "taxas médias" para calcular a transmutação desde o início até ao fim do passo.
+                    É muito mais preciso que o Predictor, mas duplica o tempo de simulação (duas execuções de transporte por passo).
+                """
+                integrador = openmc.deplete.CECMIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+            
+            elif precisao==3:
+                """
+                Métodos de Interpolação/Extrapolação
+                    CELIIntegrator (Constant Extrapolation / Linear Interpolation) e LEQIIntegrator (Linear Extrapolation / Quadratic Interpolation):
+                    Em vez de assumirem taxas constantes num determinado intervalo, estes métodos usam o histórico (dados de passos de tempo anteriores) para criar uma linha (interpolação linear) ou uma curva (quadrática) que prevê como as taxas de reação vão evoluir ao longo do passo atual.
+                    São algoritmos preditor-corretor mais eficientes para capturar tendências de queima.
+                """
+                if not precisao_extra:
+                    integrador = openmc.deplete.CELIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+                else:
+                    integrador = openmc.deplete.LEQIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+            
+            elif precisao==4:
+                """
+                Métodos de Alta Ordem
+                    CF4Integrator (Commutator-Free 4th order) e EPCRK4Integrator: 
+                    Baseiam-se em métodos matemáticos de Runge-Kutta de 4ª ordem. 
+                    São extremamente precisos e ideais para lidar com transientes complexos ou passos de tempo muito grandes (como queima de venenos consumíveis muito fortes).
+                    A desvantagem é o custo computacional elevado, pois exigem várias avaliações do transporte Monte Carlo dentro do mesmo passo de tempo.
+                """
+                if not precisao_extra:
+                    integrador = openmc.deplete.CF4Integrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+                else:
+                    integrador = openmc.deplete.EPCRK4Integrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+            
+            elif precisao==5:
+                """
+                Métodos Estocásticos Implícitos
+                    SICELIIntegrator e SILEQIIntegrator: O prefixo "SI" significa Stochastic Implicit. 
+                    Nas simulações de Monte Carlo, existe sempre ruído estatístico (incerteza nos resultados dos tallies).
+                    Em cálculos de transmutação acoplados, esse ruído pode amplificar-se passo após passo, causando instabilidades numéricas (oscilações irreais nas concentrações de isótopos).
+                    Estes integradores foram desenhados especificamente para mitigar esse ruído estatístico e garantir a estabilidade matemática do sistema.
+                """
+                if not precisao_extra:
+                    integrador = openmc.deplete.SICELIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+                else:
+                    integrador = openmc.deplete.SILEQIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+            
+            # Realiza simulação de depleção
+            integrador.integrate()
+
