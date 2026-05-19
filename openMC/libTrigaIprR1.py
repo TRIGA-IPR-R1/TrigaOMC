@@ -532,9 +532,9 @@ class TrigaIprR1:
 
         def cria_universo_elemento_tuboCentralAgua():
             #Dimensões do elemento Tubo Central Agua
-            tc_raio = 2
-            tc_esp = 0.5
-            tc_altura = 50
+            tc_raio = 1.6900
+            tc_esp = 1.9050 - 1.6900
+            tc_altura = 72.24
             
             # Definições das superfícies
             tc_cilindro_ext = openmc.ZCylinder(r= tc_raio+tc_esp)
@@ -560,13 +560,13 @@ class TrigaIprR1:
 
         def cria_universo_elemento_fonte():
             #Dimensões do elemento Fonte
-            fonte_raio = 2
-            fonte_altura = 50
+            fonte_raio = 1.8650
+            fonte_altura = 36.12 + 27.94
             
             # Definições das superfícies
             fonte_cilindro = openmc.ZCylinder(r= fonte_raio)
-            fonte_plano_sup = openmc.ZPlane(z0=  fonte_altura/2)
-            fonte_plano_inf = openmc.ZPlane(z0= -fonte_altura/2)
+            fonte_plano_sup = openmc.ZPlane(z0=  27.94)
+            fonte_plano_inf = openmc.ZPlane(z0= -36.12)
             
             # Definições das regiões
             fonte_regiao_interna = -fonte_cilindro & -fonte_plano_sup & +fonte_plano_inf
@@ -586,27 +586,31 @@ class TrigaIprR1:
 
         def cria_universo_elemento_terminalPneumático1():
             #Dimensões do elemento Terminal Pneumático
-            tp_raio = 2
-            tp_esp = 0.5
-            tp_altura = 50
+            tp_raio = 1.4000
+            tp_esp = 1.6000 - 1.4000
+            tp_altura = 36.12 + 27.94
             
             # Definições das superfícies
             tp_cilindro_ext = openmc.ZCylinder(r= tp_raio+tp_esp)
             tp_cilindro_int = openmc.ZCylinder(r= tp_raio)
-            tp_plano_sup = openmc.ZPlane(z0=  tp_altura/2)
-            tp_plano_inf = openmc.ZPlane(z0= -tp_altura/2)
+            tp_plano_sup = openmc.ZPlane(z0=  27.94)
+            tp_plano_inf = openmc.ZPlane(z0= -36.12)
             
             # Definições das regiões
-            tp_regiao_interna = -tp_cilindro_ext & +tp_cilindro_int & -tp_plano_sup & +tp_plano_inf
+            tp_regiao_interna = -tp_cilindro_int & -tp_plano_sup & +tp_plano_inf
+            tp_regiao_espessura = -tp_cilindro_ext & +tp_cilindro_int & -tp_plano_sup & +tp_plano_inf
             tp_regiao_externa = ~tp_regiao_interna
 
             # Definições das células e universo
             universo_elemento_terminalPneumático1           = openmc.Universe()
 
-            tp_celula = openmc.Cell(fill=self.m_aluminio, region=tp_regiao_interna)
+            tp_celula = openmc.Cell(fill=self.m_ar, region=tp_regiao_interna)
             universo_elemento_terminalPneumático1.add_cell(tp_celula)
 
-            extern_celula = openmc.Cell(fill=self.m_ar, region=tp_regiao_externa)
+            tp_celula_esp = openmc.Cell(fill=self.m_aluminio, region=tp_regiao_espessura)
+            universo_elemento_terminalPneumático1.add_cell(tp_celula_esp)
+
+            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=tp_regiao_externa)
             universo_elemento_terminalPneumático1.add_cell(extern_celula)
             
             # Retorno da função
@@ -621,36 +625,42 @@ class TrigaIprR1:
 
         def cria_universo_elemento_grafite():
             #Dimensões do elemento combustível de alumínio
-            comb_raio = 2
-            comb_altura = 50
+            graph_raio = 1.7950
+            graph_esp  = 1.8650 - 1.7950
+            graph_altura = 72.24
             
             # Definições das superfícies
-            comb_cilindro = openmc.ZCylinder(r= comb_raio)
-            comb_plano_sup = openmc.ZPlane(z0=  comb_altura/2)
-            comb_plano_inf = openmc.ZPlane(z0= -comb_altura/2)
+            graph_cilindro_int = openmc.ZCylinder(r= graph_raio)
+            graph_cilindro_ext = openmc.ZCylinder(r= graph_raio+graph_esp)
+            graph_plano_sup = openmc.ZPlane(z0=  graph_altura/2)
+            graph_plano_inf = openmc.ZPlane(z0= -graph_altura/2)
             
             # Definições das regiões
-            comb_regiao_interna = -comb_cilindro & -comb_plano_sup & +comb_plano_inf
-            comb_regiao_externa = ~comb_regiao_interna
+            graph_regiao_interna = -graph_cilindro_int & -graph_plano_sup & +graph_plano_inf
+            graph_regiao_clad   = -graph_cilindro_ext & +graph_cilindro_int & -graph_plano_sup & +graph_plano_inf
+            graph_regiao_externa = ~graph_regiao_clad
 
             # Definições das células e universo
-            universo_elemento_combustivel           = openmc.Universe()
+            universo_elemento_grafite           = openmc.Universe()
 
-            comb_celula = openmc.Cell(fill=self.m_grafite, region=comb_regiao_interna)
-            universo_elemento_combustivel.add_cell(comb_celula)
+            graph_celula = openmc.Cell(fill=self.m_grafite, region=graph_regiao_interna)
+            universo_elemento_grafite.add_cell(graph_celula)
 
-            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=comb_regiao_externa)
-            universo_elemento_combustivel.add_cell(extern_celula)
+            graph_vacuo_celula = openmc.Cell(fill=self.m_aluminio, region=graph_regiao_clad)
+            universo_elemento_grafite.add_cell(graph_vacuo_celula)
+
+            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=graph_regiao_externa)
+            universo_elemento_grafite.add_cell(extern_celula)
             
             # Retorno da função
-            return universo_elemento_combustivel
+            return universo_elemento_grafite
 
         ## As barras de controle são geometricamente iguais, podendo variar suas posiçoes independentemente
         def cria_universo_elemento_barraDeControle(posição_barra):
             #Dimensões do elemento combustível de alumínio
-            guia_raio = 2
-            guia_esp = 0.5
-            guia_altura = 50
+            guia_raio = 1.6000
+            guia_esp = 1.9000 - 1.6000
+            guia_altura = 72.24
             
             # Definições das superfícies
             guia_cilindro_ext = openmc.ZCylinder(r= guia_raio+guia_esp)
@@ -683,9 +693,13 @@ class TrigaIprR1:
             """
             # Dimensões do elemento combustível
             if tipoComb=="aluminio":
-                comb_raio_int = 1.1
-                comb_raio_ext = 2.0
-                comb_altura   = 50.0
+                comb_raio_int = 0.0
+                comb_raio_ext = 1.7800
+                comb_altura   = 35.56
+                comb_raio_vacuo = 1.7950
+                comb_raio_clad  = 1.8650
+                barra_altura    = 72.24
+                
             elif tipoComb=="inox" or tipoComb=="inox_instrumentado":
                 comb_raio_int = 1.0  
                 comb_raio_ext = 2.0
@@ -763,17 +777,62 @@ class TrigaIprR1:
             
             # Pino Central: Região interna do primeiro cilindro (comb_raio_int)
             # Limitada também pela altura do combustível (z_planes)
-            regiao_pino_central = -r_cyls[0] & +z_planes[0] & -z_planes[-1]
-            celula_pino_central = openmc.Cell(fill=self.m_zirconio, region=regiao_pino_central)
-            universo_elemento_combustivel.add_cell(celula_pino_central)
+
+            regiao_pino_central = -r_cyls[-1] & +z_planes[0] & -z_planes[-1]
+
+            if tipoComb=="aluminio":
+                sup_rad_vacuo     = openmc.ZCylinder(r= comb_raio_vacuo)
+                sup_rad_clad      = openmc.ZCylinder(r= comb_raio_clad)
+                sup_top_grafite   = openmc.ZPlane(z0=  27.94)
+                sup_bot_grafite   = openmc.ZPlane(z0= -27.94)
+                sup_top_aluminio  = openmc.ZPlane(z0=  32.03)
+                sup_bot_aluminio  = openmc.ZPlane(z0= -28.94)
+                sup_top_endplug   = openmc.ZPlane(z0=  barra_altura/2)
+                sup_bot_endplug   = openmc.ZPlane(z0= -barra_altura/2)
+
+                regiao_comb_vacuo   = +r_cyls[-1] & -sup_rad_vacuo & +z_planes[0] & -z_planes[-1]
+                regiao_comb_clad    = +sup_rad_vacuo & -sup_rad_clad & +sup_bot_grafite & -sup_top_grafite
+                regiao_grafite_top  = -sup_rad_vacuo & +z_planes[-1] & -sup_top_grafite
+                regiao_grafite_bot  = -sup_rad_vacuo & -z_planes[0]  & +sup_bot_grafite
+                regiao_endplug_top  = -sup_rad_clad & +sup_top_grafite & -sup_top_endplug
+                regiao_endplug_bot  = -sup_rad_clad & -sup_bot_grafite & +sup_bot_endplug
+
+                celula_vacuo = openmc.Cell(fill=self.m_ar, region=regiao_comb_vacuo)
+                universo_elemento_combustivel.add_cell(celula_vacuo)
+
+                celula_comb_clad = openmc.Cell(fill=self.m_aluminio, region=regiao_comb_clad)
+                universo_elemento_combustivel.add_cell(celula_comb_clad)
+
+                celula_grafite_top = openmc.Cell(fill=self.m_grafite, region=regiao_grafite_top)
+                universo_elemento_combustivel.add_cell(celula_grafite_top)
+
+                celula_grafite_bot = openmc.Cell(fill=self.m_grafite, region=regiao_grafite_bot)
+                universo_elemento_combustivel.add_cell(celula_grafite_bot)
+
+                celula_endplug_top = openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_top)
+                universo_elemento_combustivel.add_cell(celula_endplug_top)
+
+                celula_endplug_bot = openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_bot)
+                universo_elemento_combustivel.add_cell(celula_endplug_bot)
+
+                # --- Refrigerante do Alumínio ---
+                regiao_cilindro_total_al = -sup_rad_clad & -sup_top_endplug & +sup_bot_endplug
+                regiao_externa_al = ~regiao_cilindro_total_al
+
+                celula_externa_al = openmc.Cell(fill=self.m_refrigerante, region=regiao_externa_al)
+                universo_elemento_combustivel.add_cell(celula_externa_al)
+
+            elif tipoComb=="inox" or tipoComb=="inox_instrumentado":
+                celula_pino_central = openmc.Cell(fill=self.m_zirconio, region=regiao_pino_central)
+                universo_elemento_combustivel.add_cell(celula_pino_central)
             
-            # Região Externa (Refrigerante): Tudo que está fora do cilindro mais externo
-            # ou acima/abaixo dos planos Z (complemento do cilindro maciço total)
-            regiao_cilindro_total = -r_cyls[-1] & +z_planes[0] & -z_planes[-1]
-            regiao_externa = ~regiao_cilindro_total
-            
-            celula_externa = openmc.Cell(fill=self.m_refrigerante, region=regiao_externa)
-            universo_elemento_combustivel.add_cell(celula_externa)
+                # Região Externa (Refrigerante): Tudo que está fora do cilindro mais externo
+                # ou acima/abaixo dos planos Z (complemento do cilindro maciço total)
+                regiao_cilindro_total = -r_cyls[-1] & +z_planes[0] & -z_planes[-1]
+                regiao_externa = ~regiao_cilindro_total
+
+                celula_externa = openmc.Cell(fill=self.m_refrigerante, region=regiao_externa)
+                universo_elemento_combustivel.add_cell(celula_externa)
             
             return universo_elemento_combustivel
         
@@ -789,7 +848,7 @@ class TrigaIprR1:
         #
 
         # Crie o dicionário de elementos, já com as coordenadas
-        elemento = cria_elementosCarregaveis_com_coordenadas(tipo_geometria, pitch=6)
+        elemento = cria_elementosCarregaveis_com_coordenadas(tipo_geometria, pitch=3.9776)
 
         # Carregue o universo de cada elemento baseado em sua chave e o load
         # Esse procedimento gasta processamento e ocupa mais memória, mas é uma forma de verificação que o load está correto
@@ -835,7 +894,7 @@ class TrigaIprR1:
         celulas_elemento = []
         regioes_externas_aos_pinos = []
         for chave in elemento:
-            cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=3)    # Cria cilindro para ser a fronteira entre o universo_elemento e a água
+            cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=2)    # Cria cilindro para ser a fronteira entre o universo_elemento e a água
             regioes_externas_aos_pinos.append(+cilindro_elemento)                                   # Adiciona a região externa a esse cilindro na lista de regiões externas
             
             celula_elemento = openmc.Cell()                                                         # Cria a célula para ser preenchida com o universo_elemento

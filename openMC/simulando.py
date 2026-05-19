@@ -26,7 +26,7 @@ libTrigaIprR1.mkdir(voltar=False, nome="resultados", data=True, cpinputs=True)
 # Criando reator
 triga = libTrigaIprR1.TrigaIprR1()
 triga.materiais(comb_divisions_z=25)
-triga.geometria(load=libTrigaIprR1_load.core_atual, tipo_geometria="cilindrica")
+triga.geometria(load=libTrigaIprR1_load.core_atual, tipo_geometria="hexagonal")
 triga.configuracoes(particulas=10000, ciclos=100)
 
 # Plotanto geometria
