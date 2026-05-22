@@ -205,7 +205,7 @@ class TrigaIprR1:
         massa_uranio    = 154.90+38.2500,
         massa_u235      = 38.2500,
         hidretação      = 22.6445,
-        densidade       = 18,
+        densidade       = 6.29000,
         ):
         """
         Função para padronizar a criação do material "combustível fresco" com as respectivas composições iniciais.
@@ -624,21 +624,34 @@ class TrigaIprR1:
         #
 
         def cria_universo_elemento_grafite():
-            #Dimensões do elemento combustível de alumínio
+            #Dimensões do elemento 
             graph_raio = 1.7950
             graph_esp  = 1.8650 - 1.7950
-            graph_altura = 72.24
+            graph_altura = 55.88
+            barra_altura = 72.24
             
             # Definições das superfícies
             graph_cilindro_int = openmc.ZCylinder(r= graph_raio)
             graph_cilindro_ext = openmc.ZCylinder(r= graph_raio+graph_esp)
             graph_plano_sup = openmc.ZPlane(z0=  graph_altura/2)
             graph_plano_inf = openmc.ZPlane(z0= -graph_altura/2)
+
+            sup_top_aluminio  = openmc.ZPlane(z0=  32.03)
+            sup_bot_aluminio  = openmc.ZPlane(z0= -28.94)
+            sup_top_endplug   = openmc.ZPlane(z0=  barra_altura/2)
+            sup_bot_endplug   = openmc.ZPlane(z0= -barra_altura/2)
+            endplug_Al_tube   = openmc.ZCylinder(r= 0.4450)
             
             # Definições das regiões
             graph_regiao_interna = -graph_cilindro_int & -graph_plano_sup & +graph_plano_inf
             graph_regiao_clad   = -graph_cilindro_ext & +graph_cilindro_int & -graph_plano_sup & +graph_plano_inf
-            graph_regiao_externa = ~graph_regiao_clad
+
+            regiao_Al_top  = -graph_cilindro_ext & +graph_plano_sup & -sup_top_aluminio
+            regiao_Al_bot  = -graph_cilindro_ext & -graph_plano_inf & +sup_bot_aluminio
+            regiao_endplug_water_top  = -graph_cilindro_ext & +endplug_Al_tube & +sup_top_aluminio & -sup_top_endplug
+            regiao_endplug_Al_top  = -endplug_Al_tube & +sup_top_aluminio & -sup_top_endplug
+            regiao_endplug_water_bot  = -graph_cilindro_ext & +endplug_Al_tube & -sup_bot_aluminio & +sup_bot_endplug
+            regiao_endplug_Al_bot  = -endplug_Al_tube & -sup_bot_aluminio & +sup_bot_endplug
 
             # Definições das células e universo
             universo_elemento_grafite           = openmc.Universe()
@@ -649,8 +662,30 @@ class TrigaIprR1:
             graph_vacuo_celula = openmc.Cell(fill=self.m_aluminio, region=graph_regiao_clad)
             universo_elemento_grafite.add_cell(graph_vacuo_celula)
 
-            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=graph_regiao_externa)
-            universo_elemento_grafite.add_cell(extern_celula)
+            celula_Al_top_g = openmc.Cell(fill=self.m_aluminio, region=regiao_Al_top)
+            universo_elemento_grafite.add_cell(celula_Al_top_g)
+
+            celula_Al_bot_g = openmc.Cell(fill=self.m_aluminio, region=regiao_Al_bot)
+            universo_elemento_grafite.add_cell(celula_Al_bot_g)
+
+            celula_endplug_Al_top_g = openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_Al_top)
+            universo_elemento_grafite.add_cell(celula_endplug_Al_top_g)
+
+            celula_endplug_Al_bot_g = openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_Al_bot)
+            universo_elemento_grafite.add_cell(celula_endplug_Al_bot_g)
+
+            celula_endplug_water_top_g = openmc.Cell(fill=self.m_refrigerante, region=regiao_endplug_water_top)
+            universo_elemento_grafite.add_cell(celula_endplug_water_top_g)
+
+            celula_endplug_water_bot_g = openmc.Cell(fill=self.m_refrigerante, region=regiao_endplug_water_bot)
+            universo_elemento_grafite.add_cell(celula_endplug_water_bot_g)
+            
+            # --- Refrigerante do Alumínio ---
+            regiao_cilindro_total_al_g = -graph_cilindro_ext
+            regiao_externa_al_g = ~regiao_cilindro_total_al_g
+
+            celula_externa_al = openmc.Cell(fill=self.m_refrigerante, region=regiao_externa_al_g)
+            universo_elemento_grafite.add_cell(celula_externa_al)
             
             # Retorno da função
             return universo_elemento_grafite
@@ -789,13 +824,18 @@ class TrigaIprR1:
                 sup_bot_aluminio  = openmc.ZPlane(z0= -28.94)
                 sup_top_endplug   = openmc.ZPlane(z0=  barra_altura/2)
                 sup_bot_endplug   = openmc.ZPlane(z0= -barra_altura/2)
+                endplug_Al_tube   = openmc.ZCylinder(r= 0.4450)
 
                 regiao_comb_vacuo   = +r_cyls[-1] & -sup_rad_vacuo & +z_planes[0] & -z_planes[-1]
                 regiao_comb_clad    = +sup_rad_vacuo & -sup_rad_clad & +sup_bot_grafite & -sup_top_grafite
                 regiao_grafite_top  = -sup_rad_vacuo & +z_planes[-1] & -sup_top_grafite
                 regiao_grafite_bot  = -sup_rad_vacuo & -z_planes[0]  & +sup_bot_grafite
-                regiao_endplug_top  = -sup_rad_clad & +sup_top_grafite & -sup_top_endplug
-                regiao_endplug_bot  = -sup_rad_clad & -sup_bot_grafite & +sup_bot_endplug
+                regiao_Al_top  = -sup_rad_clad & +sup_top_grafite & -sup_top_aluminio
+                regiao_Al_bot  = -sup_rad_clad & -sup_bot_grafite & +sup_bot_aluminio
+                regiao_endplug_water_top  = -sup_rad_clad & +endplug_Al_tube & +sup_top_aluminio & -sup_top_endplug
+                regiao_endplug_Al_top  = -endplug_Al_tube & +sup_top_aluminio & -sup_top_endplug
+                regiao_endplug_water_bot  = -sup_rad_clad & +endplug_Al_tube & -sup_bot_aluminio & +sup_bot_endplug
+                regiao_endplug_Al_bot  = -endplug_Al_tube & -sup_bot_aluminio & +sup_bot_endplug
 
                 celula_vacuo = openmc.Cell(fill=self.m_ar, region=regiao_comb_vacuo)
                 universo_elemento_combustivel.add_cell(celula_vacuo)
@@ -809,14 +849,26 @@ class TrigaIprR1:
                 celula_grafite_bot = openmc.Cell(fill=self.m_grafite, region=regiao_grafite_bot)
                 universo_elemento_combustivel.add_cell(celula_grafite_bot)
 
-                celula_endplug_top = openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_top)
-                universo_elemento_combustivel.add_cell(celula_endplug_top)
+                celula_Al_top = openmc.Cell(fill=self.m_aluminio, region=regiao_Al_top)
+                universo_elemento_combustivel.add_cell(celula_Al_top)
 
-                celula_endplug_bot = openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_bot)
-                universo_elemento_combustivel.add_cell(celula_endplug_bot)
+                celula_Al_bot = openmc.Cell(fill=self.m_aluminio, region=regiao_Al_bot)
+                universo_elemento_combustivel.add_cell(celula_Al_bot)
+
+                celula_endplug_Al_top = openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_Al_top)
+                universo_elemento_combustivel.add_cell(celula_endplug_Al_top)
+
+                celula_endplug_Al_bot = openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_Al_bot)
+                universo_elemento_combustivel.add_cell(celula_endplug_Al_bot)
+
+                celula_endplug_water_top = openmc.Cell(fill=self.m_refrigerante, region=regiao_endplug_water_top)
+                universo_elemento_combustivel.add_cell(celula_endplug_water_top)
+
+                celula_endplug_water_bot = openmc.Cell(fill=self.m_refrigerante, region=regiao_endplug_water_bot)
+                universo_elemento_combustivel.add_cell(celula_endplug_water_bot)
 
                 # --- Refrigerante do Alumínio ---
-                regiao_cilindro_total_al = -sup_rad_clad & -sup_top_endplug & +sup_bot_endplug
+                regiao_cilindro_total_al = -sup_rad_clad
                 regiao_externa_al = ~regiao_cilindro_total_al
 
                 celula_externa_al = openmc.Cell(fill=self.m_refrigerante, region=regiao_externa_al)
@@ -895,11 +947,15 @@ class TrigaIprR1:
         regioes_externas_aos_pinos = []
         for chave in elemento:
             cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=2)    # Cria cilindro para ser a fronteira entre o universo_elemento e a água
+            cilindro_elemento_top = openmc.ZPlane(z0=36.12)
+            cilindro_elemento_bot = openmc.ZPlane(z0=-36.12)
             regioes_externas_aos_pinos.append(+cilindro_elemento)                                   # Adiciona a região externa a esse cilindro na lista de regiões externas
-            
+            regioes_externas_aos_pinos.append(-cilindro_elemento_top) 
+            regioes_externas_aos_pinos.append(+cilindro_elemento_bot) 
+
             celula_elemento = openmc.Cell()                                                         # Cria a célula para ser preenchida com o universo_elemento
             celula_elemento.fill = elemento[chave].universo                                         # Preenche com o universo de acordo com a chave
-            celula_elemento.region = -cilindro_elemento                                             # A região da célula é interna ao cilindro
+            celula_elemento.region = -cilindro_elemento & +cilindro_elemento_bot & -cilindro_elemento_top                                            # A região da célula é interna ao cilindro
             celula_elemento.translation = (elemento[chave].x, elemento[chave].y, 0.0)               # Translade o universo para a posição correta
             celulas_elemento.append(celula_elemento)                                                # Adiciona a lista de células
         
@@ -907,19 +963,63 @@ class TrigaIprR1:
         for fora_do_pino in regioes_externas_aos_pinos[1:]:                                         # Para cada região externa ao pino, de cada pino
             região_externa_aos_pinos = região_externa_aos_pinos & fora_do_pino                      # Adiciona à região_externa_aos_pinos a região externa a cada pino
         
-        cilindro_nucleo_ativo = openmc.ZCylinder(r=100,boundary_type="vacuum")                      # Cria um cilindro delimitar o núcleo ativo
+        cilindro_nucleo_ativo = openmc.ZCylinder(r=22.06)                                           # Cria um cilindro delimitar o núcleo ativo
         celula_refrigente_nucleo_ativo = openmc.Cell()                                              # Cria célula que contém os espaços entre os elementos
         celula_refrigente_nucleo_ativo.fill = self.m_refrigerante                                   # Preenche com água (os espaços entre os elementos)
         celula_refrigente_nucleo_ativo.region = região_externa_aos_pinos & -cilindro_nucleo_ativo   # Define a região com externa a todos elementos e interna ao cilindro que delimita o núcleo ativo
         
+        # Criando geometria externa ao núcleo ativo radialmente
+        externo_clad_top = openmc.ZPlane(z0=28.73)
+        externo_clad_bot = openmc.ZPlane(z0=-28.73)
+        externo_graph_bot = openmc.ZPlane(z0=-27.94)
+        externo_graph_top = openmc.ZPlane(z0=27.94)
+        raio_externo_1 = openmc.ZCylinder(r=22.85)
+        raio_externo_2 = openmc.ZCylinder(r=53.35)
+        raio_externo_3 = openmc.ZCylinder(r=54.50)
+        raio_externo_4 = openmc.ZCylinder(r=84.50, boundary_type='vacuum')
+
+        celula_graph_externo = openmc.Cell()
+        celula_graph_externo.fill = self.m_grafite
+        celula_graph_externo.region = +raio_externo_1 & -raio_externo_2 & -externo_graph_top & +externo_graph_bot
+        celula_clad_externo_1 = openmc.Cell()
+        celula_clad_externo_1.fill = self.m_aluminio
+        celula_clad_externo_1.region = +cilindro_nucleo_ativo & -raio_externo_1 & -externo_graph_top & +externo_graph_bot
+        celula_clad_externo_2 = openmc.Cell()
+        celula_clad_externo_2.fill = self.m_aluminio
+        celula_clad_externo_2.region = +raio_externo_2 & -raio_externo_3 & -externo_graph_top & +externo_graph_bot
+        celula_clad_externo_3 = openmc.Cell()
+        celula_clad_externo_3.fill = self.m_aluminio
+        celula_clad_externo_3.region = +cilindro_nucleo_ativo & -raio_externo_3 & -externo_clad_top & +externo_graph_top
+        celula_clad_externo_4 = openmc.Cell()
+        celula_clad_externo_4.fill = self.m_aluminio
+        celula_clad_externo_4.region = +cilindro_nucleo_ativo & -raio_externo_3 & -externo_graph_bot & +externo_clad_bot
+        celula_water_externo = openmc.Cell()
+        celula_water_externo.fill = self.m_refrigerante
+        celula_water_externo.region = +raio_externo_3 & -raio_externo_4 & +externo_clad_bot & -externo_clad_top | +cilindro_nucleo_ativo & -raio_externo_4 & +externo_clad_top & -cilindro_elemento_top | +cilindro_nucleo_ativo & -raio_externo_4 & +cilindro_elemento_bot & -externo_clad_bot
         
-        universo_nucleo_ativo = openmc.Universe()
-        universo_nucleo_ativo.add_cells(celulas_elemento)
-        universo_nucleo_ativo.add_cell(celula_refrigente_nucleo_ativo)
+        # Criando os refletores axiais
+        refletor_top = openmc.ZPlane(z0=56.12, boundary_type='vacuum')
+        refletor_bot = openmc.ZPlane(z0=-56.12, boundary_type='vacuum')
+
+        celula_refletor_axial = openmc.Cell()
+        celula_refletor_axial.fill = self.m_refrigerante
+        celula_refletor_axial.region = -raio_externo_4 & -refletor_top & +cilindro_elemento_top | -raio_externo_4 & +refletor_bot & -cilindro_elemento_bot
             
+        # Juntando as células
+        universo_core = openmc.Universe()
+        universo_core.add_cells(celulas_elemento)
+        universo_core.add_cell(celula_refrigente_nucleo_ativo)
+        universo_core.add_cell(celula_graph_externo)
+        universo_core.add_cell(celula_clad_externo_1)
+        universo_core.add_cell(celula_clad_externo_2)
+        universo_core.add_cell(celula_clad_externo_3)
+        universo_core.add_cell(celula_clad_externo_4)
+        universo_core.add_cell(celula_water_externo)
+        universo_core.add_cell(celula_refletor_axial)
+
         # Criar a geometria contendo 
         self.Geometry = openmc.Geometry()
-        self.Geometry.root_universe = universo_nucleo_ativo
+        self.Geometry.root_universe = universo_core
         
 
 
@@ -965,7 +1065,7 @@ class TrigaIprR1:
         geometria=None,
         filename=None,
         basis="xy",
-        width=[150,150],
+        width=[169,169],
         pixels=[5000,5000],
         origin=(0,0,0)
         ):
