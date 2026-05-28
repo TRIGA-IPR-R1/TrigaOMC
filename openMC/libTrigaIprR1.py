@@ -303,13 +303,21 @@ class TrigaIprR1:
         self.m_refrigerante.add_nuclide('O16', 8.8574E-01, percent_type='wo')
         self.m_refrigerante.add_nuclide('O17', 3.5857E-04, percent_type='wo')
         self.m_refrigerante.add_nuclide('O18', 1.9982E-03, percent_type='wo')
-        self.m_refrigerante.set_density('g/cm3', 1)
+        self.m_refrigerante.set_density('g/cm3', 0.99652)
         self.lista_materiais.append(self.m_refrigerante)
         self.m_colors[self.m_refrigerante] = 'blue'
+
+        self.m_B4C = openmc.Material(name='Boro')
+        self.m_B4C.add_nuclide('B10',  1.5522E-01, percent_type='wo')
+        self.m_B4C.add_nuclide('B11',  6.2478E-01, percent_type='wo')
+        self.m_B4C.add_element('C'  ,  2.2000E-01, percent_type='wo')
+        self.m_B4C.set_density('g/cm3', 2.5100)
+        self.lista_materiais.append(self.m_B4C)
+        self.m_colors[self.m_B4C] = 'orange'
         
         self.m_grafite = openmc.Material(name='Grafite')
         self.m_grafite.add_element('C', 1, percent_type = 'wo')
-        self.m_grafite.set_density('g/cm3', 2.15)
+        self.m_grafite.set_density('g/cm3', 1.6700)
         self.lista_materiais.append(self.m_grafite)
         self.m_colors[self.m_grafite] = 'brown'
 
@@ -338,7 +346,7 @@ class TrigaIprR1:
         self.m_zirconio.add_element('Zr', 1, percent_type ='wo')
         self.m_zirconio.set_density('g/cm3', 6.511)
         self.lista_materiais.append(self.m_zirconio)
-        self.m_colors[self.m_zirconio] = 'red'
+        self.m_colors[self.m_zirconio] = 'green'
         
         
         self.m_SS304 = openmc.Material(name='Aço INOX',)
@@ -659,8 +667,8 @@ class TrigaIprR1:
             graph_celula = openmc.Cell(fill=self.m_grafite, region=graph_regiao_interna)
             universo_elemento_grafite.add_cell(graph_celula)
 
-            graph_vacuo_celula = openmc.Cell(fill=self.m_aluminio, region=graph_regiao_clad)
-            universo_elemento_grafite.add_cell(graph_vacuo_celula)
+            graph_clad_celula = openmc.Cell(fill=self.m_aluminio, region=graph_regiao_clad)
+            universo_elemento_grafite.add_cell(graph_clad_celula)
 
             celula_Al_top_g = openmc.Cell(fill=self.m_aluminio, region=regiao_Al_top)
             universo_elemento_grafite.add_cell(celula_Al_top_g)
@@ -691,33 +699,72 @@ class TrigaIprR1:
             return universo_elemento_grafite
 
         ## As barras de controle são geometricamente iguais, podendo variar suas posiçoes independentemente
-        def cria_universo_elemento_barraDeControle(posição_barra):
-            #Dimensões do elemento combustível de alumínio
+        def cria_universo_elemento_barraDeControle(ajuste_altura=30):
+            #Dimensões do elemento barra de controle
+            B4C_raio = 0.9500
+            void_raio = 0.9650
+            clad_Al_raio = 1.1100
             guia_raio = 1.6000
-            guia_esp = 1.9000 - 1.6000
-            guia_altura = 72.24
+            clad_raio = 1.9000
             
             # Definições das superfícies
-            guia_cilindro_ext = openmc.ZCylinder(r= guia_raio+guia_esp)
-            guia_cilindro_int = openmc.ZCylinder(r= guia_raio)
-            guia_plano_sup = openmc.ZPlane(z0=  guia_altura/2)
-            guia_plano_inf = openmc.ZPlane(z0= -guia_altura/2)
+            barra_cilindro_ext = openmc.ZCylinder(r= void_raio)
+            barra_cilindro_int = openmc.ZCylinder(r= B4C_raio )
+            clad_cilindro      = openmc.ZCylinder(r= clad_Al_raio)
+            guia_agua          = openmc.ZCylinder(r= guia_raio   )
+            guia_clad          = openmc.ZCylinder(r= clad_raio   )
+            Al_superior         = openmc.ZPlane(z0=   20.05 + ajuste_altura)
+            Al_inferior         = openmc.ZPlane(z0=  -30.95 + ajuste_altura)
+            B4C_inferior        = openmc.ZPlane(z0= -19.05  + ajuste_altura)
+            B4C_superior        = openmc.ZPlane(z0=  19.05  + ajuste_altura)
             
             # Definições das regiões
-            guia_regiao_interna = -guia_cilindro_ext & +guia_cilindro_int & -guia_plano_sup & +guia_plano_inf
-            guia_regiao_externa = ~guia_regiao_interna
+            B4C_regiao_interna = -barra_cilindro_int & -B4C_superior & +B4C_inferior
+            B4C_regiao_externa = +barra_cilindro_int & -barra_cilindro_ext & -B4C_superior & +B4C_inferior
+            clad_regiao_interna = +barra_cilindro_ext & -clad_cilindro & -B4C_superior & +B4C_inferior
+            Al_inferior_regiao = -clad_cilindro & -B4C_inferior & +Al_inferior
+            Al_superior_regiao = -clad_cilindro & -Al_superior & +B4C_superior
+            agua_regiao_radial = -guia_agua & +clad_cilindro & +Al_inferior & -Al_superior
+            clad_região_radial = -guia_clad & +guia_agua 
+            agua_infinita_radial = +guia_clad 
+            agua_interna_fundo = -guia_clad & -Al_inferior
+            agua_interna_topo  = -guia_clad & +Al_superior
 
             # Definições das células e universo
-            universo_elemento_combustivel           = openmc.Universe()
+            universo_elemento_barraDeControle           = openmc.Universe()
 
-            guia_celula = openmc.Cell(fill=self.m_aluminio, region=guia_regiao_interna)
-            universo_elemento_combustivel.add_cell(guia_celula)
+            celula_B4C = openmc.Cell(fill=self.m_B4C, region=B4C_regiao_interna)
+            universo_elemento_barraDeControle.add_cell(celula_B4C)
 
-            extern_celula = openmc.Cell(fill=self.m_refrigerante, region=guia_regiao_externa)
-            universo_elemento_combustivel.add_cell(extern_celula)
+            celula_void = openmc.Cell( region=B4C_regiao_externa)
+            universo_elemento_barraDeControle.add_cell(celula_void)
+
+            celula_clad = openmc.Cell(fill=self.m_aluminio, region=clad_regiao_interna)
+            universo_elemento_barraDeControle.add_cell(celula_clad)
+
+            celula_Al_inf = openmc.Cell(fill=self.m_aluminio, region=Al_inferior_regiao)
+            universo_elemento_barraDeControle.add_cell(celula_Al_inf)
+
+            celula_Al_sup = openmc.Cell(fill=self.m_aluminio, region=Al_superior_regiao)
+            universo_elemento_barraDeControle.add_cell(celula_Al_sup)
+
+            celula_agua_radial = openmc.Cell(fill=self.m_refrigerante, region=agua_regiao_radial)
+            universo_elemento_barraDeControle.add_cell(celula_agua_radial)
+
+            celula_clad_guia = openmc.Cell(fill=self.m_aluminio, region=clad_região_radial)
+            universo_elemento_barraDeControle.add_cell(celula_clad_guia)
+
+            celula_agua_inf_radial = openmc.Cell(fill=self.m_refrigerante, region=agua_infinita_radial)
+            universo_elemento_barraDeControle.add_cell(celula_agua_inf_radial)
+
+            celula_agua_inf_fundo = openmc.Cell(fill=self.m_refrigerante, region=agua_interna_fundo)
+            universo_elemento_barraDeControle.add_cell(celula_agua_inf_fundo)
+
+            celula_agua_inf_topo = openmc.Cell(fill=self.m_refrigerante, region=agua_interna_topo)
+            universo_elemento_barraDeControle.add_cell(celula_agua_inf_topo)
             
             # Retorno da função
-            return universo_elemento_combustivel
+            return universo_elemento_barraDeControle
         
         ## Cada elemento combustível pode ter uma composição diferente e ser fatiado de um jeito diferente
         def cria_universo_elemento_combustivel(fill, tipoComb="aluminio"):
@@ -837,7 +884,7 @@ class TrigaIprR1:
                 regiao_endplug_water_bot  = -sup_rad_clad & +endplug_Al_tube & -sup_bot_aluminio & +sup_bot_endplug
                 regiao_endplug_Al_bot  = -endplug_Al_tube & -sup_bot_aluminio & +sup_bot_endplug
 
-                celula_vacuo = openmc.Cell(fill=self.m_ar, region=regiao_comb_vacuo)
+                celula_vacuo = openmc.Cell( region=regiao_comb_vacuo)
                 universo_elemento_combustivel.add_cell(celula_vacuo)
 
                 celula_comb_clad = openmc.Cell(fill=self.m_aluminio, region=regiao_comb_clad)
