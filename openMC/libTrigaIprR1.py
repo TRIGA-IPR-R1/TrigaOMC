@@ -40,7 +40,9 @@ Funções:
 
     mkdir: cria uma pasta (com data ou não) (voltando para o diretorio anterior antes de criar ou não)
 
-    chdir: muda para a pasta informada (se nenhuma pasta informada, procura a mais recente e muda para ela)
+    chdir: muda para a pasta informada.
+           sem nome: procura a pasta mais recente e muda para ela
+           nome + ultimo=True: procura a pasta mais recente cujo nome começa com "nome"
 """
 
 def printv(inp):
@@ -60,27 +62,36 @@ def mkdir(nome="teste_sem_nome", data=False, voltar=True, cpinputs=False, on=Tru
         if cpinputs:
             os.system("cp ../*.py .")
     
-def chdir(nome=None):
-    if (nome != None):
+def chdir(nome=None, ultimo=False):
+    if nome != None and not ultimo:
         os.chdir(nome)
+        return
+
+    diretorio_atual = os.getcwd()
+    diretorios = [
+        diretorio for diretorio in os.listdir(diretorio_atual)
+        if os.path.isdir(os.path.join(diretorio_atual, diretorio))
+    ]
+
+    if nome != None and ultimo:
+        diretorios = [diretorio for diretorio in diretorios if diretorio.startswith(nome)]
+
+    data_mais_recente = 0
+    pasta_mais_recente = None
+
+    for diretorio in diretorios:
+        data_criacao = os.path.getctime(os.path.join(diretorio_atual, diretorio))
+        if data_criacao > data_mais_recente:
+            data_mais_recente = data_criacao
+            pasta_mais_recente = diretorio
+
+    if pasta_mais_recente:
+        os.chdir(os.path.join(diretorio_atual, pasta_mais_recente))
+        print("Diretório mais recente encontrado:", pasta_mais_recente)
+    elif nome is not None:
+        print(f"Não foi possível encontrar um diretório mais recente do tipo '{nome}'.")
     else:
-        diretorio_atual = os.getcwd()
-        diretorios = [diretorio for diretorio in os.listdir(diretorio_atual) if os.path.isdir(os.path.join(diretorio_atual, diretorio))]
-
-        data_mais_recente = 0
-        pasta_mais_recente = None
-
-        for diretorio in diretorios:
-            data_criacao = os.path.getctime(os.path.join(diretorio_atual, diretorio))
-            if data_criacao > data_mais_recente:
-                data_mais_recente = data_criacao
-                pasta_mais_recente = diretorio
-
-        if pasta_mais_recente:
-            os.chdir(os.path.join(diretorio_atual, pasta_mais_recente))
-            print("Diretório mais recente encontrado:", pasta_mais_recente)
-        else:
-            print("Não foi possível encontrar um diretório mais recente.")
+        print("Não foi possível encontrar um diretório mais recente.")
 
 
 """
