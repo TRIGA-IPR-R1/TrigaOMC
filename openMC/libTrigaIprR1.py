@@ -1347,3 +1347,18 @@ class TrigaIprR1:
             # Realiza simulação de depleção
             integrador.integrate()
 
+    def get_keff(self):
+        sp = openmc.StatePoint('statepoint.'+str(self.Settings.batches)+'.h5')
+        keff = sp.keff
+        sp.close()
+        return keff
+
+    def get_reactivity(self):
+        keff = self.get_keff() # Para não abrir o statepoint duas vezes
+        return (keff - 1.0) / keff
+
+    def get_reactivity_pcm(self):
+        return self.get_reactivity() * 1e5
+
+    def get_reactivity_dolar(self, Beff_pcm=800):
+        return self.get_reactivity_pcm() / Beff_pcm
