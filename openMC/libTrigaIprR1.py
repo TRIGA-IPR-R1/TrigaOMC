@@ -119,7 +119,7 @@ class DadosElementosCarregaveis:
 
 
 def cria_elementosCarregaveis_com_coordenadas(
-        tipo_geometria = "cilindrica",
+        tipo_geometria = "circular",
         qtd_aneis = 6,
         pitch = 10.5,
         ):
@@ -127,7 +127,7 @@ def cria_elementosCarregaveis_com_coordenadas(
     """
     # Essa função cria todos os objetos "elementos carregaveis" com suas respectivas coordenadas
     # Nota: Os parãmetros universo, load e mat_combustivel devem ser preenchidos posteriormente
-    cilindrica
+    circular
     hexagonal
     """
     
@@ -139,7 +139,7 @@ def cria_elementosCarregaveis_com_coordenadas(
                     y       = 0.0
                 )
     
-    if tipo_geometria == "cilindrica":                                              # Considerando geometria cilíndrica
+    if tipo_geometria == "circular":                                              # Considerando geometria cilíndrica
         for n_radial in range(1,qtd_aneis):                                         # Iterando de 1 (anel B) até a quantidade de anéis
             letra_anel = chr(65 + n_radial)                                         # Calcula a letra do respectivo anel (65 é o código ASCII para 'A', logo quando n_radial é 0 a letra é A, e assim sucessivamente)
             r = pitch * n_radial                                                    # Calcula raio de acordo com n_radial baseado no pitch
@@ -177,7 +177,7 @@ def cria_elementosCarregaveis_com_coordenadas(
                     y += dy
                         
     else:
-        print("Erro na função 'cria_elementosCarregaveis_com_coordenadas()':\n 'geometria' deve receber string 'cilindrica' ou 'hexagonal'.")
+        print("Erro na função 'cria_elementosCarregaveis_com_coordenadas()':\n 'geometria' deve receber string 'circular' ou 'hexagonal'.")
         exit(0)
     
     return elemento
@@ -535,7 +535,7 @@ class TrigaIprR1:
     def geometria(
         self,
         load = load.core1,
-        tipo_geometria = "cilindrica",
+        tipo_geometria = "circular",
         posição_barra_controle = 0,
         posição_barra_regulação = 0,
         posição_barra_segurança = 0,
