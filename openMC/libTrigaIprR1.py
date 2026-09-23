@@ -200,6 +200,9 @@ Exemplo de uso padrão:
 """
 class TrigaIprR1:
 
+    posição_barra_up   = 38.1
+    posição_barra_down = 0
+    
     def __init__(self):
         printv("Objeto iniciado.")
         self.materiais()
