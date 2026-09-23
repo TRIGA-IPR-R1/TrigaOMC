@@ -1130,10 +1130,15 @@ class TrigaIprR1:
         pixels=[5000,5000],
         origin=(0,0,0)
         ):
-        printv("################################################")
-        printv("############        Plot 2D         ############")
-        printv("################################################")
-        if plot:
+        if not plot:
+            printv("################################################")
+            printv("############        Plot 2D desabilitado...    #")
+            printv("################################################")
+        else:
+            printv("################################################")
+            printv("############        Plot 2D         ############")
+            printv("################################################")
+
             if geometria is None:
                 geometria = self.Geometry
 
@@ -1174,10 +1179,14 @@ class TrigaIprR1:
         pixels=(500, 500, 500),
         origin=(0,0,0)
         ):
-        printv("################################################")
-        printv("############        Plot 3D         ############")
-        printv("################################################")
-        if plot:
+        if not plot:
+            printv("################################################")
+            printv("############        Plot 3D desabilitado...    #")
+            printv("################################################")
+        else:
+            printv("################################################")
+            printv("############        Plot 3D         ############")
+            printv("################################################")
             ############ Plotar em 3D
             plot_3d = openmc.Plot.from_geometry(geometria)
             plot_3d.type = 'voxel'
@@ -1208,12 +1217,22 @@ class TrigaIprR1:
 
 
 
-    def simulacao_autovalor(self):
-        printv("################################################")
-        printv("#########     Executando simulação     #########")
-        printv("#########        de autovalores        #########")
-        printv("################################################")
-        if simu:
+    def simulacao_autovalor(self,particulas=None, ciclos=None, inativo=None):
+        # Pode definir as configurações da simulação por aqui também
+        if particulas is not None and ciclos is not None and inativo is not None:
+            self.configuracoes(particulas=particulas, ciclos=ciclos, inativo=inativo)
+        
+        if not simu:
+            printv("################################################")
+            printv("#########   Simulação de autovalores   #########")
+            printv("#########         desabilidata         #########")
+            printv("################################################")
+        else:
+            printv("################################################")
+            printv("#########     Executando simulação     #########")
+            printv("#########        de autovalores        #########")
+            printv("################################################")
+
             self.lista_materiais.export_to_xml()
             self.Geometry.export_to_xml()
             self.Settings.export_to_xml()
@@ -1234,9 +1253,16 @@ class TrigaIprR1:
             precisao=1,
             precisao_extra=False
             ):
-        print("################################################")
-        print("###########        Depleção         ############")
-        print("################################################")
+        if not simu:
+            printv("################################################")
+            printv("######  Acoplamento transporte-depleção  #######")
+            printv("######            desabilidata           #######")
+            printv("################################################")
+        else:
+            printv("################################################")
+            printv("######       Executanto acoplamento      #######")
+            printv("######         transporte-depleção       #######")
+            printv("################################################")
 
         # CoupledOperator Vs. IndependentOperator
         ## O operador acoplado trabalha junto com o OpenMC, que simula fluxo, taxas de reações, etc, e isso é usado pelas equações de Bateman, juntamente com a cadeia de decaimento, para calcular a nova composição.
