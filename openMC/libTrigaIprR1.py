@@ -225,20 +225,20 @@ class TrigaIprR1:
     def mat_comb_fresco(
         self,
         num_serie,
-        massa_zirconio  = 2050.0607,
-        massa_uranio    = 154.90+38.2500,
-        massa_u235      = 38.2500,
-        hidretação      = 22.6445,
-        densidade       = 6.29000,
+        massa_liga     = 2200,
+        massa_uranio    = 154+38,
+        massa_u235      = 38,
+        hidretação      = 22,
+        densidade       = 6,
         ):
-        """
+        f"""
         Função para padronizar a criação do material "combustível fresco" com as respectivas composições iniciais.
         Args:
             num_serie           = Número de série
-            massa_zirconio      = Massa de total de ZrH (g)
-            massa_uranio        = Massa de total de Urânio (g)
-            massa_u235          = Massa de somente U235 (g)
-            hidretação          = Massa de somente Hidrogênio (g)
+            massa_liga          = Massa da liga de U-Zr (g)         [U235 + U238 + Zr]
+            massa_uranio        = Massa de total de Urânio (g)      [U235 + U238]
+            massa_u235          = Massa de somente U235 (g)         [U235]
+            hidretação          = Massa de somente Hidrogênio (g)   [H]
         """
 
         if(num_serie>2000): #Número de série dos elementos combustíveis de alumínio
@@ -270,10 +270,10 @@ class TrigaIprR1:
                     
                     # Criando fatia de material combustível
                     combustivel_fatia = openmc.Material(name = f'comb_{num_serie}_{r}_{theta}_{z}')
-                    combustivel_fatia.add_nuclide('U235',     percent = massa_u235,                  percent_type = "wo")
-                    combustivel_fatia.add_nuclide('U238',     percent = massa_uranio-massa_u235,     percent_type = "wo")
-                    combustivel_fatia.add_element('Zr',       percent = massa_zirconio-hidretação,   percent_type = "wo")
-                    combustivel_fatia.add_element('H',        percent = hidretação,                  percent_type = "wo")
+                    combustivel_fatia.add_nuclide('U235',     percent = massa_u235,                percent_type = "wo")
+                    combustivel_fatia.add_nuclide('U238',     percent = massa_uranio-massa_u235,   percent_type = "wo")
+                    combustivel_fatia.add_element('Zr',       percent = massa_liga-massa_uranio,   percent_type = "wo")
+                    combustivel_fatia.add_element('H',        percent = hidretação,                percent_type = "wo")
                     combustivel_fatia.set_density('g/cm3',    densidade)
                     combustivel_fatia.depletable = True
 
@@ -321,53 +321,48 @@ class TrigaIprR1:
         self.lista_materiais = openmc.Materials()
         self.m_colors = {}
         
+
         self.m_refrigerante = openmc.Material(name='Água Leve')
-        self.m_refrigerante.add_nuclide('H1',  1.1187E-01, percent_type='wo')
-        self.m_refrigerante.add_nuclide('H2',  3.3540E-05, percent_type='wo')
-        self.m_refrigerante.add_nuclide('O16', 8.8574E-01, percent_type='wo')
-        self.m_refrigerante.add_nuclide('O17', 3.5857E-04, percent_type='wo')
-        self.m_refrigerante.add_nuclide('O18', 1.9982E-03, percent_type='wo')
+        self.m_refrigerante.add_element('H', 2, percent_type='ao')
+        self.m_refrigerante.add_element('O', 1, percent_type='ao')
         self.m_refrigerante.set_density('g/cm3', 0.99652)
         self.lista_materiais.append(self.m_refrigerante)
         self.m_colors[self.m_refrigerante] = 'blue'
 
-        self.m_B4C = openmc.Material(name='Boro')
-        self.m_B4C.add_nuclide('B10',  1.5522E-01, percent_type='wo')
-        self.m_B4C.add_nuclide('B11',  6.2478E-01, percent_type='wo')
-        self.m_B4C.add_element('C'  ,  2.2000E-01, percent_type='wo')
+
+        self.m_B4C = openmc.Material(name='Carbeto de Boro')
+        self.m_B4C.add_element('B',  4, percent_type='ao')
+        self.m_B4C.add_element('C',  1, percent_type='ao')
         self.m_B4C.set_density('g/cm3', 2.5100)
         self.lista_materiais.append(self.m_B4C)
         self.m_colors[self.m_B4C] = 'orange'
         
+
         self.m_grafite = openmc.Material(name='Grafite')
-        self.m_grafite.add_element('C', 1, percent_type = 'wo')
+        self.m_grafite.add_element('C', 1, percent_type = 'ao')
         self.m_grafite.set_density('g/cm3', 1.6700)
         self.lista_materiais.append(self.m_grafite)
         self.m_colors[self.m_grafite] = 'brown'
 
         
         self.m_ar = openmc.Material(name='Ar')
-        self.m_ar.add_nuclide('N14',  7.7826E-01, percent_type='ao')
-        self.m_ar.add_nuclide('N15',  2.8589E-03, percent_type='ao')
-        self.m_ar.add_nuclide('O16',  1.0794E-01, percent_type='ao')
-        self.m_ar.add_nuclide('O17',  1.0156E-01, percent_type='ao')
-        self.m_ar.add_nuclide('O18',  3.8829E-05, percent_type='ao')
-        self.m_ar.add_nuclide('Ar36', 2.6789E-03, percent_type='ao')
-        self.m_ar.add_nuclide('Ar38', 3.4177E-03, percent_type='ao')
-        self.m_ar.add_nuclide('Ar40', 3.2467E-03, percent_type='ao')
+        self.m_ar.add_element('N',  78.11, percent_type='ao')
+        self.m_ar.add_element('O',  20.95, percent_type='ao')
+        self.m_ar.add_element('Ar',  0.93, percent_type='ao')
         self.m_ar.set_density('g/cm3', 0.001225)
         self.lista_materiais.append(self.m_ar)
         self.m_colors[self.m_ar] = 'white'
         
         
         self.m_aluminio = openmc.Material(name='Alúminio')
-        self.m_aluminio.add_nuclide('Al27', 1, percent_type ='wo')
+        self.m_aluminio.add_element('Al', 1, percent_type ='ao')
         self.m_aluminio.set_density('g/cm3', 2.7)
         self.lista_materiais.append(self.m_aluminio)
         self.m_colors[self.m_aluminio] = 'gray'
 
+
         self.m_zirconio = openmc.Material(name='Zirconio')
-        self.m_zirconio.add_element('Zr', 1, percent_type ='wo')
+        self.m_zirconio.add_element('Zr', 1, percent_type ='ao')
         self.m_zirconio.set_density('g/cm3', 6.511)
         self.lista_materiais.append(self.m_zirconio)
         self.m_colors[self.m_zirconio] = 'green'
@@ -390,6 +385,8 @@ class TrigaIprR1:
         self.lista_materiais.append(self.m_SS304)
         self.m_colors[self.m_SS304] = 'silver'
         
+
+        #Adicionando materiais combustíveis
         if(queimado==None):
             printv("################################################")
             printv("############ Definição dos Materiais ###########")
@@ -404,7 +401,7 @@ class TrigaIprR1:
             
             self.m_comb = {} #Dicionário contendo os materiais de todos combustíveis
 
-            #Número de série, Massa de ZrH (g), Massa de Urânio (g), Massa de U235 (g)
+            #Número de série, Massa da liga de U-Zr (g), Massa de Urânio (g), Massa de U235 (g)
             #Elementos de alumínio. Comprados em 1960.
             self.m_comb[1314]   =  self.mat_comb_fresco(1314,   2252.84, 195.10, 38.65)
             self.m_comb[1188]   =  self.mat_comb_fresco(1188,   2240.47, 194.47, 38.52)
@@ -522,15 +519,15 @@ class TrigaIprR1:
         #Adicionar todos combustíveis na lista de materiais, e definir uma cor para eles
         for key, matriz_3d in self.m_comb.items():
             # Definindo cores do tipo de combustível:
-            ## Alumínio = Amarelo escuro
-            ## Inox     = Amarelo
+            ## Alumínio = Amarelo
+            ## Inox     = Amarelo escuro
             ## Inox TC  = Amarelo claro
             if key < 6000:
                 cor = 'yellow'
             elif key == 6821:
-                cor = 'yellow'
+                cor = 'lightyellow'
             else:
-                cor = 'yellow'
+                cor = 'goldenrod'
                  
             # Desempacotando a matriz 3D para acessar cada fatia (material)
             for lista_r in matriz_3d:
@@ -544,6 +541,26 @@ class TrigaIprR1:
                             
                             # Atribuindo a cor à fatia específica
                             self.m_colors[mat_fatia] = cor
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     def geometria(
         self,
