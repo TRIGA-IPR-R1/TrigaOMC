@@ -548,6 +548,10 @@ class TrigaIprR1:
         printv("############      comb_queimado      ###########")
         printv("################################################")
 
+        self.celulas_combustivel = []            # fatias da carne combustível
+        self.celulas_elemento_combustivel = []   # uma célula por elemento combustível
+        self.celulas_por_chave = {}
+
         #
         # Universos elementos que não se repetem
         #
@@ -822,10 +826,12 @@ class TrigaIprR1:
                 z_planes.append(openmc.ZPlane(z0 = z_min + i * delta_z))
 
             # Cortes em R (Cilindros Concêntricos a partir do raio interno)
+            # OpenMC >= 0.16 rejeita ZCylinder(r=0); o eixo é tratado como interior do primeiro raio > 0
             r_cyls = []
             delta_r = (comb_raio_ext - comb_raio_int) / divs_r
             for i in range(divs_r + 1):
-                r_cyls.append(openmc.ZCylinder(r = comb_raio_int + i * delta_r))
+                raio = comb_raio_int + i * delta_r
+                r_cyls.append(None if raio <= 0.0 else openmc.ZCylinder(r=raio))
 
             # Cortes em Theta (Planos Azimutais passando pelo centro)
             theta_planes = []
@@ -846,7 +852,10 @@ class TrigaIprR1:
                     for z in range(divs_z):
                         
                         regiao_z = +z_planes[z] & -z_planes[z+1]
-                        regiao_r = +r_cyls[r] & -r_cyls[r+1]
+                        if r_cyls[r] is None:
+                            regiao_r = -r_cyls[r+1]
+                        else:
+                            regiao_r = +r_cyls[r] & -r_cyls[r+1]
                             
                         if divs_theta == 1:
                             regiao_theta = None
@@ -865,6 +874,7 @@ class TrigaIprR1:
                         material_fatia = fill[r][t][z]
                         celula_fatia = openmc.Cell(fill=material_fatia, region=regiao_celula)
                         universo_elemento_combustivel.add_cell(celula_fatia)
+                        self.celulas_combustivel.append(celula_fatia)
 
 
             # ==========================================
@@ -991,6 +1001,8 @@ class TrigaIprR1:
                     elemento[chave].universo = cria_universo_elemento_combustivel(self.m_comb[load[chave]], tipoComb="inox") # E assim sucessivamente
                 else:                                                                   # Caso não seja nenhuma das opções, então é o combustível instrumentado
                     elemento[chave].universo = cria_universo_elemento_combustivel(self.m_comb[load[chave]], tipoComb="inox_instrumentado")
+
+        self.elementos = elemento
                     
 
 
@@ -1004,12 +1016,14 @@ class TrigaIprR1:
 
         # Geometria do núcleo
         ## Gerar uma célula a partir de um cilindro para cada elemento e gerar a região externa aos cilindros
+        self.z_elemento_inf = -36.12
+        self.z_elemento_sup = 36.12
         celulas_elemento = []
         regioes_externas_aos_pinos = []
         for chave in elemento:
             cilindro_elemento = openmc.ZCylinder(x0=elemento[chave].x, y0=elemento[chave].y,r=2)    # Cria cilindro para ser a fronteira entre o universo_elemento e a água
-            cilindro_elemento_top = openmc.ZPlane(z0=36.12)
-            cilindro_elemento_bot = openmc.ZPlane(z0=-36.12)
+            cilindro_elemento_top = openmc.ZPlane(z0=self.z_elemento_sup)
+            cilindro_elemento_bot = openmc.ZPlane(z0=self.z_elemento_inf)
             regioes_externas_aos_pinos.append(+cilindro_elemento)                                   # Adiciona a região externa a esse cilindro na lista de regiões externas
             regioes_externas_aos_pinos.append(-cilindro_elemento_top) 
             regioes_externas_aos_pinos.append(+cilindro_elemento_bot) 
@@ -1019,12 +1033,16 @@ class TrigaIprR1:
             celula_elemento.region = -cilindro_elemento & +cilindro_elemento_bot & -cilindro_elemento_top                                            # A região da célula é interna ao cilindro
             celula_elemento.translation = (elemento[chave].x, elemento[chave].y, 0.0)               # Translade o universo para a posição correta
             celulas_elemento.append(celula_elemento)                                                # Adiciona a lista de células
+            self.celulas_por_chave[chave] = celula_elemento
+            if type(elemento[chave].load) == int:
+                self.celulas_elemento_combustivel.append(celula_elemento)
         
         região_externa_aos_pinos = regioes_externas_aos_pinos[0]                                    # Inicializar a variável com a primeira região da lista
         for fora_do_pino in regioes_externas_aos_pinos[1:]:                                         # Para cada região externa ao pino, de cada pino
             região_externa_aos_pinos = região_externa_aos_pinos & fora_do_pino                      # Adiciona à região_externa_aos_pinos a região externa a cada pino
         
-        cilindro_nucleo_ativo = openmc.ZCylinder(r=22.06)                                           # Cria um cilindro delimitar o núcleo ativo
+        self.raio_nucleo_ativo = 22.06
+        cilindro_nucleo_ativo = openmc.ZCylinder(r=self.raio_nucleo_ativo)                         # Cria um cilindro delimitar o núcleo ativo
         celula_refrigente_nucleo_ativo = openmc.Cell()                                              # Cria célula que contém os espaços entre os elementos
         celula_refrigente_nucleo_ativo.fill = self.m_refrigerante                                   # Preenche com água (os espaços entre os elementos)
         celula_refrigente_nucleo_ativo.region = região_externa_aos_pinos & -cilindro_nucleo_ativo   # Define a região com externa a todos elementos e interna ao cilindro que delimita o núcleo ativo
@@ -1038,6 +1056,7 @@ class TrigaIprR1:
         raio_externo_2 = openmc.ZCylinder(r=53.35)
         raio_externo_3 = openmc.ZCylinder(r=54.50)
         raio_externo_4 = openmc.ZCylinder(r=84.50, boundary_type='vacuum')
+        self.raio_modelo = 84.50
 
         celula_graph_externo = openmc.Cell()
         celula_graph_externo.fill = self.m_grafite
@@ -1059,8 +1078,10 @@ class TrigaIprR1:
         celula_water_externo.region = +raio_externo_3 & -raio_externo_4 & +externo_clad_bot & -externo_clad_top | +cilindro_nucleo_ativo & -raio_externo_4 & +externo_clad_top & -cilindro_elemento_top | +cilindro_nucleo_ativo & -raio_externo_4 & +cilindro_elemento_bot & -externo_clad_bot
         
         # Criando os refletores axiais
-        refletor_top = openmc.ZPlane(z0=56.12, boundary_type='vacuum')
-        refletor_bot = openmc.ZPlane(z0=-56.12, boundary_type='vacuum')
+        self.z_modelo_sup = 56.12
+        self.z_modelo_inf = -56.12
+        refletor_top = openmc.ZPlane(z0=self.z_modelo_sup, boundary_type='vacuum')
+        refletor_bot = openmc.ZPlane(z0=self.z_modelo_inf, boundary_type='vacuum')
 
         celula_refletor_axial = openmc.Cell()
         celula_refletor_axial.fill = self.m_refrigerante
@@ -1077,6 +1098,8 @@ class TrigaIprR1:
         universo_core.add_cell(celula_clad_externo_4)
         universo_core.add_cell(celula_water_externo)
         universo_core.add_cell(celula_refletor_axial)
+
+        self.celulas_nucleo = celulas_elemento + [celula_refrigente_nucleo_ativo]
 
         # Criar a geometria contendo 
         self.Geometry = openmc.Geometry()
@@ -1095,7 +1118,8 @@ class TrigaIprR1:
         ciclos=100,
         inativo=10,
         n_atrasados=True,
-        foton=False
+        foton=False,
+        ifp_n_generation=None
         ):
         printv("################################################")
         printv("########### Definição da Simulação  ############")
@@ -1111,6 +1135,14 @@ class TrigaIprR1:
         self.Settings.inactive = inativo
         self.Settings.source = openmc.IndependentSource(space=openmc.stats.Point())
         self.Settings.output = {'tallies': False} #Esta linha desabilita a geração do arquivo tallies.out
+
+        if ifp_n_generation is None:
+            ifp_n_generation = getattr(self, '_ifp_n_generation', None)
+        if ifp_n_generation is None and self._tem_score_ifp():
+            ifp_n_generation = min(10, inativo)
+        if ifp_n_generation is not None:
+            ifp_n_generation = min(int(ifp_n_generation), inativo)
+            self.Settings.ifp_n_generation = ifp_n_generation
         printv(self.Settings)
 
 
@@ -1217,10 +1249,15 @@ class TrigaIprR1:
 
 
 
-    def simulacao_autovalor(self,particulas=None, ciclos=None, inativo=None):
+    def simulacao_autovalor(self,particulas=None, ciclos=None, inativo=None, n_atrasados=None, ifp_n_generation=None):
         # Pode definir as configurações da simulação por aqui também
         if particulas is not None and ciclos is not None and inativo is not None:
-            self.configuracoes(particulas=particulas, ciclos=ciclos, inativo=inativo)
+            kwargs = dict(particulas=particulas, ciclos=ciclos, inativo=inativo)
+            if n_atrasados is not None:
+                kwargs['n_atrasados'] = n_atrasados
+            if ifp_n_generation is not None:
+                kwargs['ifp_n_generation'] = ifp_n_generation
+            self.configuracoes(**kwargs)
         
         if not simu:
             printv("################################################")
@@ -1236,6 +1273,7 @@ class TrigaIprR1:
             self.lista_materiais.export_to_xml()
             self.Geometry.export_to_xml()
             self.Settings.export_to_xml()
+            self.lista_contagens.export_to_xml()
             openmc.run()
 
     
@@ -1243,7 +1281,7 @@ class TrigaIprR1:
     ###########         Depleção        ############
     ################################################
 
-    def simulacao_queima(
+    def simulacao_queima_estática(
             self,
             timesteps=[1],
             power=250e3,
@@ -1264,89 +1302,117 @@ class TrigaIprR1:
             printv("######         transporte-depleção       #######")
             printv("################################################")
 
-        # CoupledOperator Vs. IndependentOperator
-        ## O operador acoplado trabalha junto com o OpenMC, que simula fluxo, taxas de reações, etc, e isso é usado pelas equações de Bateman, juntamente com a cadeia de decaimento, para calcular a nova composição.
-        ## Já com operador independente é necessário passar manualmente as matrizes de fluxo e seções de choque microscópicas.
-        ##
-        ## Obs: Quando passado potência 0, o operador acoplado ignora a execução do openmc e calcula só o decaimento
-
-        # Somente simula se a variável simu estiver definida com True
-        if simu:
+            # CoupledOperator Vs. IndependentOperator
+            ## O operador acoplado trabalha junto com o OpenMC, que simula fluxo, taxas de reações, etc, e isso é usado pelas equações de Bateman, juntamente com a cadeia de decaimento, para calcular a nova composição.
+            ## Já com operador independente é necessário passar manualmente as matrizes de fluxo e seções de choque microscópicas.
+            ##
+            ## Obs: Quando passado potência 0, o operador acoplado ignora a execução do openmc e calcula só o decaimento
 
             # Cria operador acoplado
             if not os.path.exists(continuar): #Inicia uma queima nova
+                printv("######       Iniciando nova queima       #######")
                 operador = openmc.deplete.CoupledOperator(
-                    model=openmc.model.Model(self.Geometry, self.lista_materiais, self.Settings),
+                    model=openmc.model.Model(self.Geometry, self.lista_materiais, self.Settings, self.lista_contagens),
                     chain_file=chain_file
-                    )
+                )
             else: # Para continuar uma queima interrompida de onde parou
+                printv("######       Continuando queima          #######")
                 operador = openmc.deplete.CoupledOperator(
-                    model=openmc.model.Model(self.Geometry, self.lista_materiais, self.Settings),
+                    model=openmc.model.Model(self.Geometry, self.lista_materiais, self.Settings, self.lista_contagens),
                     chain_file=chain_file,
                     prev_results=openmc.deplete.Results.from_hdf5(continuar)
-                    )
+                )
 
-            
-            # Seleciona o tipo de integrador de acordo com a precisão desejada
-            if precisao==1:
-                """
-                Métodos de Passo Único
-                    PredictorIntegrator: É a abordagem mais básica (método de Euler).
-                    Pega nas taxas de reação calculadas no início do passo de tempo e assume que elas permanecem constantes até ao fim desse passo.
-                    Requer apenas uma simulação de transporte por passo, sendo o mais rápido, mas o menos preciso, especialmente se os passos de tempo forem longos.
-                """
-                integrador = openmc.deplete.PredictorIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
-            
-            elif precisao==2:
-                """
-                Métodos de Ponto Médio e Correção
-                    CECMIntegrator (Constant Extrapolation / Constant Midpoint): Este método usa as taxas do início para prever a composição na metade do tempo (t/2).
-                    De seguida, corre uma nova simulação de transporte nesse ponto médio para obter taxas de reação atualizadas, e usa essas "taxas médias" para calcular a transmutação desde o início até ao fim do passo.
-                    É muito mais preciso que o Predictor, mas duplica o tempo de simulação (duas execuções de transporte por passo).
-                """
-                integrador = openmc.deplete.CECMIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
-            
-            elif precisao==3:
-                """
-                Métodos de Interpolação/Extrapolação
-                    CELIIntegrator (Constant Extrapolation / Linear Interpolation) e LEQIIntegrator (Linear Extrapolation / Quadratic Interpolation):
-                    Em vez de assumirem taxas constantes num determinado intervalo, estes métodos usam o histórico (dados de passos de tempo anteriores) para criar uma linha (interpolação linear) ou uma curva (quadrática) que prevê como as taxas de reação vão evoluir ao longo do passo atual.
-                    São algoritmos preditor-corretor mais eficientes para capturar tendências de queima.
-                """
-                if not precisao_extra:
-                    integrador = openmc.deplete.CELIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
-                else:
-                    integrador = openmc.deplete.LEQIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
-            
-            elif precisao==4:
-                """
-                Métodos de Alta Ordem
-                    CF4Integrator (Commutator-Free 4th order) e EPCRK4Integrator: 
-                    Baseiam-se em métodos matemáticos de Runge-Kutta de 4ª ordem. 
-                    São extremamente precisos e ideais para lidar com transientes complexos ou passos de tempo muito grandes (como queima de venenos consumíveis muito fortes).
-                    A desvantagem é o custo computacional elevado, pois exigem várias avaliações do transporte Monte Carlo dentro do mesmo passo de tempo.
-                """
-                if not precisao_extra:
-                    integrador = openmc.deplete.CF4Integrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
-                else:
-                    integrador = openmc.deplete.EPCRK4Integrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
-            
-            elif precisao==5:
-                """
-                Métodos Estocásticos Implícitos
-                    SICELIIntegrator e SILEQIIntegrator: O prefixo "SI" significa Stochastic Implicit. 
-                    Nas simulações de Monte Carlo, existe sempre ruído estatístico (incerteza nos resultados dos tallies).
-                    Em cálculos de transmutação acoplados, esse ruído pode amplificar-se passo após passo, causando instabilidades numéricas (oscilações irreais nas concentrações de isótopos).
-                    Estes integradores foram desenhados especificamente para mitigar esse ruído estatístico e garantir a estabilidade matemática do sistema.
-                """
-                if not precisao_extra:
-                    integrador = openmc.deplete.SICELIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
-                else:
-                    integrador = openmc.deplete.SILEQIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
-            
             # Realiza simulação de depleção
+            integrador = self.seleciona_integrador(operador, timesteps, power, timestep_units, precisao, precisao_extra)
             integrador.integrate()
 
+    def simulacao_queima_estática(
+            self,
+            timesteps=[1],
+            power=250e3,
+            chain_file="/opt/nuclear-data/chain_endfb71_pwr.xml",
+            timestep_units='d',
+            continuar="",
+            precisao=1,
+            precisao_extra=False
+            ):
+        if not simu:
+            printv("################################################")
+            printv("######  Acoplamento transporte-depleção  #######")
+            printv("######            desabilidata           #######")
+            printv("################################################")
+        else:
+            printv("################################################")
+            printv("######       Executanto acoplamento      #######")
+            printv("######         transporte-depleção       #######")
+            printv("################################################")
+
+    def seleciona_integrador(self, operador, timesteps, power, timestep_units, precisao=1, precisao_extra=False):
+        # Seleciona o tipo de integrador de acordo com a precisão desejada
+        if precisao==1:
+            """
+            Métodos de Passo Único
+                PredictorIntegrator: É a abordagem mais básica (método de Euler).
+                Pega nas taxas de reação calculadas no início do passo de tempo e assume que elas permanecem constantes até ao fim desse passo.
+                Requer apenas uma simulação de transporte por passo, sendo o mais rápido, mas o menos preciso, especialmente se os passos de tempo forem longos.
+            """
+            printv("######       Método PredictorIntegrator       #######")
+            return openmc.deplete.PredictorIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+        
+        elif precisao==2:
+            """
+            Métodos de Ponto Médio e Correção
+                CECMIntegrator (Constant Extrapolation / Constant Midpoint): Este método usa as taxas do início para prever a composição na metade do tempo (t/2).
+                De seguida, corre uma nova simulação de transporte nesse ponto médio para obter taxas de reação atualizadas, e usa essas "taxas médias" para calcular a transmutação desde o início até ao fim do passo.
+                É muito mais preciso que o Predictor, mas duplica o tempo de simulação (duas execuções de transporte por passo).
+            """
+            printv("######       Método CECMIntegrator       #######")
+            return openmc.deplete.CECMIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+        
+        elif precisao==3:
+            """
+            Métodos de Interpolação/Extrapolação
+                CELIIntegrator (Constant Extrapolation / Linear Interpolation) e LEQIIntegrator (Linear Extrapolation / Quadratic Interpolation):
+                Em vez de assumirem taxas constantes num determinado intervalo, estes métodos usam o histórico (dados de passos de tempo anteriores) para criar uma linha (interpolação linear) ou uma curva (quadrática) que prevê como as taxas de reação vão evoluir ao longo do passo atual.
+                São algoritmos preditor-corretor mais eficientes para capturar tendências de queima.
+            """
+            if not precisao_extra:
+                printv("######       Método CELIIntegrator       #######")
+                return openmc.deplete.CELIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+            else:
+                printv("######       Método LEQIIntegrator       #######")
+                return openmc.deplete.LEQIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+        
+        elif precisao==4:
+            """
+            Métodos de Alta Ordem
+                CF4Integrator (Commutator-Free 4th order) e EPCRK4Integrator: 
+                Baseiam-se em métodos matemáticos de Runge-Kutta de 4ª ordem. 
+                São extremamente precisos e ideais para lidar com transientes complexos ou passos de tempo muito grandes (como queima de venenos consumíveis muito fortes).
+                A desvantagem é o custo computacional elevado, pois exigem várias avaliações do transporte Monte Carlo dentro do mesmo passo de tempo.
+            """
+            if not precisao_extra:
+                printv("######       Método CF4Integrator       #######")
+                return openmc.deplete.CF4Integrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+            else:
+                printv("######       Método EPCRK4Integrator       #######")
+                return openmc.deplete.EPCRK4Integrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+        
+        elif precisao==5:
+            """
+            Métodos Estocásticos Implícitos
+                SICELIIntegrator e SILEQIIntegrator: O prefixo "SI" significa Stochastic Implicit. 
+                Nas simulações de Monte Carlo, existe sempre ruído estatístico (incerteza nos resultados dos tallies).
+                Em cálculos de transmutação acoplados, esse ruído pode amplificar-se passo após passo, causando instabilidades numéricas (oscilações irreais nas concentrações de isótopos).
+                Estes integradores foram desenhados especificamente para mitigar esse ruído estatístico e garantir a estabilidade matemática do sistema.
+            """
+            if not precisao_extra:
+                printv("######       Método SICELIIntegrator       #######")
+                return openmc.deplete.SICELIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
+            else:
+                printv("######       Método SILEQIIntegrator       #######")
+                return openmc.deplete.SILEQIIntegrator(operator=operador, timesteps=timesteps, power=power, timestep_units=timestep_units) 
     def get_keff(self):
         sp = openmc.StatePoint('statepoint.'+str(self.Settings.batches)+'.h5')
         keff = sp.keff
