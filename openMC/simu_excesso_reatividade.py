@@ -21,8 +21,8 @@ if __name__ != '__main__': #Caso seja importado como biblioteca
     exit(1)
 
 
-# Criando pasta para armazenar todos resultados (com data e copiando as entradas)
-libTrigaIprR1.mkdir(voltar=False, nome="resultados_simu_basica", data=True, cpinputs=True)
+libTrigaIprR1.entra_resultados()
+libTrigaIprR1.mkdir(voltar=False, nome="excesso_reatividade", data=True, cpinputs=True)
 
 
 print("""

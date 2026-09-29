@@ -27,7 +27,8 @@ if not libTrigaIprR1.simu and not libTrigaIprR1.plot:
 # Trabalhando dados da última simulação realizada
 ###########################
 """)
-    libTrigaIprR1.chdir("resultados_calibracao_barras", ultimo=True) # Volta para ultima simulação realizada
+    libTrigaIprR1.entra_resultados()
+    libTrigaIprR1.chdir("calibracao_barras", ultimo=True) # Volta para ultima simulação realizada
 else:
     print("""
 ###########################
@@ -36,7 +37,8 @@ else:
 # - outras barras fixas nas posições superiores
 ###########################
 """)
-    libTrigaIprR1.mkdir(voltar=False, nome="resultados_calibracao_barras", data=True, cpinputs=True)
+    libTrigaIprR1.entra_resultados()
+    libTrigaIprR1.mkdir(voltar=False, nome="calibracao_barras", data=True, cpinputs=True)
 
 
 
