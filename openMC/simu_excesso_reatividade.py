@@ -22,6 +22,7 @@ if __name__ != '__main__': #Caso seja importado como biblioteca
 
 
 libTrigaIprR1.entra_resultados()
+UP = libTrigaIprR1.TrigaIprR1.posição_barra_up
 libTrigaIprR1.mkdir(voltar=False, nome="excesso_reatividade", data=True, cpinputs=True)
 
 
@@ -40,9 +41,9 @@ triga = libTrigaIprR1.TrigaIprR1()
 triga.geometria(
     load=libTrigaIprR1_load.core1,
     tipo_geometria="circular",
-    posição_barra_controle=triga.up,
-    posição_barra_regulação=triga.up,
-    posição_barra_segurança=triga.up
+    posição_barra_controle=UP,
+    posição_barra_regulação=UP,
+    posição_barra_segurança=UP,
     )
 
 # Plotanto geometria
@@ -53,12 +54,14 @@ triga.plot2D_secao_transversal(basis="yz",width=[169,112.24])
 
 # Simulação de autovalor
 libTrigaIprR1.mkdir(voltar=True, nome="keff")
-triga.simulacao_autovalor(particulas=1000, ciclos=300, inativo=150)
+triga.simulacao_autovalor(particulas=10000, ciclos=250, inativo=50)
 
-# Retirando o keff
-sp = openmc.StatePoint('statepoint.'+str(triga.Settings.batches)+'.h5')
-print('Keff: ', sp.keff)
-sp.close()
+keff = triga.get_keff()
+rho = (keff - 1.0) / keff
+print('Keff: ', keff)
+print('Excesso de reatividade ρ: ', rho)
+print('Excesso de reatividade ρ (pcm): ', rho * 1e5)
+print('Excesso de reatividade ρ ($): ', rho * 1e5 / 800)
 
 
 

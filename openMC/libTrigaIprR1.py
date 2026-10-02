@@ -38,31 +38,40 @@ verbose = True
 Funções:
     printv: imprime no terminal se verbose é verdadeiro
 
-    entra_resultados: cria a pasta "resultados" se não existir e entra nela
+    entra_resultados: cria openMC/resultados se não existir e entra nela.
+                      Todos os plots e saídas devem ficar dentro dessa pasta.
 
-    mkdir: cria uma pasta (com data ou não) (voltando para o diretorio anterior antes de criar ou não)
+    mkdir: cria uma pasta (com data ou não) e entra nela.
+           voltar=True: sobe um nível antes de criar (irmão da pasta atual).
+           Nunca sobe acima de resultados/.
 
     chdir: muda para a pasta informada.
            sem nome: procura a pasta mais recente e muda para ela
            nome + ultimo=True: procura a pasta mais recente cujo nome começa com "nome"
 """
 
+_pasta_resultados = None
+
 def printv(inp):
     if verbose:
         print(inp)
 
 def entra_resultados(pasta="resultados"):
-    if os.path.basename(os.getcwd()) == pasta:
-        return
-    if not os.path.isdir(pasta):
-        os.makedirs(pasta)
+    global _pasta_resultados
+    if not os.path.isabs(pasta):
+        pasta = os.path.join(os.path.dirname(os.path.abspath(__file__)), pasta)
+    pasta = os.path.abspath(pasta)
+    os.makedirs(pasta, exist_ok=True)
     os.chdir(pasta)
+    _pasta_resultados = pasta
 
 def mkdir(nome="teste_sem_nome", data=False, voltar=True, cpinputs=False, on=True):
     if on:
-        if (voltar==True):
-            os.chdir("../")
-        if (data==True):
+        if voltar:
+            cwd = os.path.abspath(os.getcwd())
+            if _pasta_resultados is None or cwd != os.path.abspath(_pasta_resultados):
+                os.chdir("..")
+        if data:
             agora = datetime.now()
             nome = agora.strftime(nome+"_%Y%m%d_%H%M%S")
         if not os.path.exists(nome):
@@ -74,6 +83,12 @@ def mkdir(nome="teste_sem_nome", data=False, voltar=True, cpinputs=False, on=Tru
     
 def chdir(nome=None, ultimo=False):
     if nome != None and not ultimo:
+        destino = os.path.abspath(os.path.join(os.getcwd(), nome))
+        if _pasta_resultados is not None:
+            raiz = os.path.abspath(_pasta_resultados)
+            if not (destino == raiz or destino.startswith(raiz + os.sep)):
+                os.chdir(raiz)
+                return
         os.chdir(nome)
         return
 
@@ -222,14 +237,35 @@ class TrigaIprR1:
     def __del__(self):
         printv("Objeto destruído.")
 
+    def dims_carne_combustivel(self, num_serie=None, tipoComb=None):
+        """Dimensões da carne U-ZrH (cm). RFAS Tabelas 4.1 e 4.2.
+
+        Al  (série < 2000): maciço, Ø 3,56 cm, L 35,56 cm
+        Inox / 6821:        vareta Zr Ø 6,35 mm, carne Ø 36,3 mm, L 38,10 cm
+        """
+        if tipoComb is None:
+            if num_serie is None:
+                raise ValueError("Informe num_serie ou tipoComb.")
+            if num_serie < 2000:
+                tipoComb = 'aluminio'
+            elif num_serie > 7000:
+                tipoComb = 'inox'
+            else:
+                tipoComb = 'inox_instrumentado'
+        if tipoComb == 'aluminio':
+            return tipoComb, 0.0, 3.56 / 2.0, 35.56
+        if tipoComb in ('inox', 'inox_instrumentado'):
+            return tipoComb, 0.635 / 2.0, 3.63 / 2.0, 38.10
+        raise ValueError(f"tipoComb desconhecido: {tipoComb}")
+
     def mat_comb_fresco(
         self,
         num_serie,
-        massa_liga     = 2200,
+        massa_liga      = 2200,
         massa_uranio    = 154+38,
         massa_u235      = 38,
-        hidretação      = 22,
-        densidade       = 6,
+        hidretação      = 1.0,
+        densidade       = None,
         ):
         f"""
         Função para padronizar a criação do material "combustível fresco" com as respectivas composições iniciais.
@@ -238,19 +274,24 @@ class TrigaIprR1:
             massa_liga          = Massa da liga de U-Zr (g)         [U235 + U238 + Zr]
             massa_uranio        = Massa de total de Urânio (g)      [U235 + U238]
             massa_u235          = Massa de somente U235 (g)         [U235]
-            hidretação          = Massa de somente Hidrogênio (g)   [H]
+            hidretação          = Razão atômica H/Zr               [1.0 Al, 1.6 inox]
+            densidade           = None: ρ = (massa_liga + m_H) / V_carne  [g/cm3]
         """
 
-        if(num_serie>2000): #Número de série dos elementos combustíveis de alumínio
-            r_ext = 10
-            r_int = 0
-            comprimento = 20
-        else:
-            r_ext = 10
-            r_int = 1
-            comprimento = 20
+        # Obtendo dimensões da carne combustível de maneira padronizada
+        _, r_int, r_ext, comprimento = self.dims_carne_combustivel(num_serie=num_serie)
+        volume_carne = math.pi * (r_ext**2 - r_int**2) * comprimento
+
+        # H/Zr → massa de H (g), com as massas atômicas naturais do OpenMC
+        massa_zirconio = massa_liga - massa_uranio
+        massa_hidrogenio = hidretação * openmc.data.atomic_weight('H') / openmc.data.atomic_weight('Zr') * massa_zirconio
+
+        # Calculando a densidade para bater exatamente com as massas informadas
+        if densidade is None:
+            densidade = (massa_liga + massa_hidrogenio) / volume_carne
+        printv(f"Combustível {num_serie}: ρ = {densidade:.4f} g/cm³  (V = {volume_carne:.2f} cm³, H/Zr = {hidretação}, m_H = {massa_hidrogenio:.2f} g)")
         
-        # Pré-alocando a matriz tridimensional
+        # Pré-alocando a matriz tridimensional para armazenar os materiais de cada fatia
         combustiveis_fatias = [
             [
                 [None for _ in range(self.comb_divisions_z)] 
@@ -273,8 +314,10 @@ class TrigaIprR1:
                     combustivel_fatia.add_nuclide('U235',     percent = massa_u235,                percent_type = "wo")
                     combustivel_fatia.add_nuclide('U238',     percent = massa_uranio-massa_u235,   percent_type = "wo")
                     combustivel_fatia.add_element('Zr',       percent = massa_liga-massa_uranio,   percent_type = "wo")
-                    combustivel_fatia.add_element('H',        percent = hidretação,                percent_type = "wo")
+                    combustivel_fatia.add_element('H',        percent = massa_hidrogenio,          percent_type = "wo")
                     combustivel_fatia.set_density('g/cm3',    densidade)
+                    combustivel_fatia.add_s_alpha_beta('c_H_in_ZrH')
+                    combustivel_fatia.add_s_alpha_beta('c_Zr_in_ZrH')
                     combustivel_fatia.depletable = True
 
                     # --- CALCULANDO O VOLUME DA FATIA ---
@@ -326,6 +369,7 @@ class TrigaIprR1:
         self.m_refrigerante.add_element('H', 2, percent_type='ao')
         self.m_refrigerante.add_element('O', 1, percent_type='ao')
         self.m_refrigerante.set_density('g/cm3', 0.99652)
+        self.m_refrigerante.add_s_alpha_beta('c_H_in_H2O')
         self.lista_materiais.append(self.m_refrigerante)
         self.m_colors[self.m_refrigerante] = 'blue'
 
@@ -341,6 +385,7 @@ class TrigaIprR1:
         self.m_grafite = openmc.Material(name='Grafite')
         self.m_grafite.add_element('C', 1, percent_type = 'ao')
         self.m_grafite.set_density('g/cm3', 1.6700)
+        self.m_grafite.add_s_alpha_beta('c_Graphite')
         self.lista_materiais.append(self.m_grafite)
         self.m_colors[self.m_grafite] = 'brown'
 
@@ -366,6 +411,17 @@ class TrigaIprR1:
         self.m_zirconio.set_density('g/cm3', 6.511)
         self.lista_materiais.append(self.m_zirconio)
         self.m_colors[self.m_zirconio] = 'green'
+
+
+        # Discos de veneno (somente Al). RFAS Tabela 4.2: 1,3 mm, Sm2O3 em matriz de Al.
+        # Composição não está no RFAS; GA Type 102: ~1 wt% Sm2O3, resto Al.
+        self.m_disco_samario = openmc.Material(name='Disco Sm2O3-Al')
+        self.m_disco_samario.add_element('Al', 99.0, percent_type='wo')
+        self.m_disco_samario.add_element('Sm', 0.8623, percent_type='wo')
+        self.m_disco_samario.add_element('O',  0.1377, percent_type='wo')
+        self.m_disco_samario.set_density('g/cm3', 2.72)
+        self.lista_materiais.append(self.m_disco_samario)
+        self.m_colors[self.m_disco_samario] = 'purple'
         
         
         self.m_SS304 = openmc.Material(name='Aço INOX',)
@@ -401,8 +457,8 @@ class TrigaIprR1:
             
             self.m_comb = {} #Dicionário contendo os materiais de todos combustíveis
 
-            #Número de série, Massa da liga de U-Zr (g), Massa de Urânio (g), Massa de U235 (g)
-            #Elementos de alumínio. Comprados em 1960.
+            #Número de série, Massa da liga de U-Zr (g), Massa de Urânio (g), Massa de U235 (g), Hidretação (H/Zr)
+            #Elementos de alumínio. Comprados em 1960. Hidretação 1.0 (default).
             self.m_comb[1314]   =  self.mat_comb_fresco(1314,   2252.84, 195.10, 38.65)
             self.m_comb[1188]   =  self.mat_comb_fresco(1188,   2240.47, 194.47, 38.52)
             self.m_comb[1289]   =  self.mat_comb_fresco(1289,   2246.71, 194.12, 38.46)
@@ -462,16 +518,16 @@ class TrigaIprR1:
             self.m_comb[1345]   =  self.mat_comb_fresco(1345,   2281.06, 190.47, 37.73)
             self.m_comb[1263]   =  self.mat_comb_fresco(1263,   2252.84, 190.14, 37.67)
             self.m_comb[1274]   =  self.mat_comb_fresco(1274,   2243.74, 189.60, 37.56)
-            # Elementos de Inox. Comprados em 1972.
-            self.m_comb[7191]   =  self.mat_comb_fresco(7191,   2299.00, 193.00, 38.00)
-            self.m_comb[7192]   =  self.mat_comb_fresco(7192,   2292.00, 192.00, 38.00)
-            self.m_comb[7193]   =  self.mat_comb_fresco(7193,   2297.00, 193.00, 38.00)
-            self.m_comb[7194]   =  self.mat_comb_fresco(7194,   2293.00, 193.00, 38.00)
-            self.m_comb[7195]   =  self.mat_comb_fresco(7195,   2295.00, 193.00, 38.00)
-            self.m_comb[7196]   =  self.mat_comb_fresco(7196,   2294.00, 193.00, 38.00)
-            self.m_comb[7197]   =  self.mat_comb_fresco(7197,   2297.00, 193.00, 38.00)
-            self.m_comb[7198]   =  self.mat_comb_fresco(7198,   2297.00, 193.00, 38.00)
-            self.m_comb[6821]   =  self.mat_comb_fresco(6821,   2305.00, 193.00, 38.00) # Combustível instrumentado
+            # Elementos de Inox. Comprados em 1972. Hidretação 1.6
+            self.m_comb[7191]   =  self.mat_comb_fresco(7191,   2299.00, 193.00, 38.00, 1.6)
+            self.m_comb[7192]   =  self.mat_comb_fresco(7192,   2292.00, 192.00, 38.00, 1.6)
+            self.m_comb[7193]   =  self.mat_comb_fresco(7193,   2297.00, 193.00, 38.00, 1.6)
+            self.m_comb[7194]   =  self.mat_comb_fresco(7194,   2293.00, 193.00, 38.00, 1.6)
+            self.m_comb[7195]   =  self.mat_comb_fresco(7195,   2295.00, 193.00, 38.00, 1.6)
+            self.m_comb[7196]   =  self.mat_comb_fresco(7196,   2294.00, 193.00, 38.00, 1.6)
+            self.m_comb[7197]   =  self.mat_comb_fresco(7197,   2297.00, 193.00, 38.00, 1.6)
+            self.m_comb[7198]   =  self.mat_comb_fresco(7198,   2297.00, 193.00, 38.00, 1.6)
+            self.m_comb[6821]   =  self.mat_comb_fresco(6821,   2305.00, 193.00, 38.00, 1.6) # Combustível instrumentado
         
         
         else:
@@ -819,21 +875,20 @@ class TrigaIprR1:
             tipoComb="inox"
             tipoComb="inox_instrumentado"
             """
-            # Dimensões do elemento combustível
-            if tipoComb=="aluminio":
-                comb_raio_int = 0.0
-                comb_raio_ext = 1.7800
-                comb_altura   = 35.56
-                comb_raio_vacuo = 1.7950
-                comb_raio_clad  = 1.8650
+            tipoComb, comb_raio_int, comb_raio_ext, comb_altura = self.dims_carne_combustivel(tipoComb=tipoComb)
+            # RFAS Tabela 4.2: folga diametral, clad, grafite axial, comprimento total
+            if tipoComb == "aluminio":
+                comb_raio_vacuo = comb_raio_ext + 0.018 / 2.0   # folga diametral 0,18 mm
+                comb_raio_clad  = 3.73 / 2.0                    # Ø revestimento 37,3 mm
+                grafite_altura  = 10.16                         # refletor axial 101,6 mm
                 barra_altura    = 72.24
-                
-            elif tipoComb=="inox" or tipoComb=="inox_instrumentado":
-                comb_raio_int = 1.0  
-                comb_raio_ext = 2.0
-                comb_altura   = 50.0
+                mat_revestimento = self.m_aluminio
             else:
-                exit(0)
+                comb_raio_vacuo = comb_raio_ext + 0.028 / 2.0   # folga diametral 0,28 mm
+                comb_raio_clad  = 3.76 / 2.0                    # Ø revestimento 37,6 mm
+                grafite_altura  = 8.81                          # refletor axial 88,1 mm
+                barra_altura    = 72.06
+                mat_revestimento = self.m_SS304
             
             # Descobrindo a quantidade de divisões com base no tamanho da matriz 3D
             divs_r = len(fill)
@@ -908,83 +963,89 @@ class TrigaIprR1:
             # ==========================================
             # 3. DEFININDO O PINO CENTRAL E A REGIÃO EXTERNA
             # ==========================================
-            
-            # Pino Central: Região interna do primeiro cilindro (comb_raio_int)
-            # Limitada também pela altura do combustível (z_planes)
+            # RFAS 4.2.1 / Tabela 4.2: grafite axial no Ø da carne; inox tem vareta de Zr Ø 6,35 mm
+            # Al: discos de Sm2O3-Al (1,3 mm) entre a carne e o grafite
 
-            regiao_pino_central = -r_cyls[-1] & +z_planes[0] & -z_planes[-1]
+            disco_altura = 0.13 if tipoComb == "aluminio" else 0.0
+            z_graf_sup = comb_altura / 2.0 + disco_altura + grafite_altura
+            z_graf_inf = -z_graf_sup
+            z_end_sup = barra_altura / 2.0
+            z_end_inf = -z_end_sup
 
-            if tipoComb=="aluminio":
-                sup_rad_vacuo     = openmc.ZCylinder(r= comb_raio_vacuo)
-                sup_rad_clad      = openmc.ZCylinder(r= comb_raio_clad)
-                sup_top_grafite   = openmc.ZPlane(z0=  27.94)
-                sup_bot_grafite   = openmc.ZPlane(z0= -27.94)
-                sup_top_aluminio  = openmc.ZPlane(z0=  32.03)
-                sup_bot_aluminio  = openmc.ZPlane(z0= -28.94)
-                sup_top_endplug   = openmc.ZPlane(z0=  barra_altura/2)
-                sup_bot_endplug   = openmc.ZPlane(z0= -barra_altura/2)
-                endplug_Al_tube   = openmc.ZCylinder(r= 0.4450)
+            sup_rad_vacuo = openmc.ZCylinder(r=comb_raio_vacuo)
+            sup_rad_clad = openmc.ZCylinder(r=comb_raio_clad)
+            sup_top_grafite = openmc.ZPlane(z0=z_graf_sup)
+            sup_bot_grafite = openmc.ZPlane(z0=z_graf_inf)
+            sup_top_endplug = openmc.ZPlane(z0=z_end_sup)
+            sup_bot_endplug = openmc.ZPlane(z0=z_end_inf)
 
-                regiao_comb_vacuo   = +r_cyls[-1] & -sup_rad_vacuo & +z_planes[0] & -z_planes[-1]
-                regiao_comb_clad    = +sup_rad_vacuo & -sup_rad_clad & +sup_bot_grafite & -sup_top_grafite
-                regiao_grafite_top  = -sup_rad_vacuo & +z_planes[-1] & -sup_top_grafite
-                regiao_grafite_bot  = -sup_rad_vacuo & -z_planes[0]  & +sup_bot_grafite
-                regiao_Al_top  = -sup_rad_clad & +sup_top_grafite & -sup_top_aluminio
-                regiao_Al_bot  = -sup_rad_clad & -sup_bot_grafite & +sup_bot_aluminio
-                regiao_endplug_water_top  = -sup_rad_clad & +endplug_Al_tube & +sup_top_aluminio & -sup_top_endplug
-                regiao_endplug_Al_top  = -endplug_Al_tube & +sup_top_aluminio & -sup_top_endplug
-                regiao_endplug_water_bot  = -sup_rad_clad & +endplug_Al_tube & -sup_bot_aluminio & +sup_bot_endplug
-                regiao_endplug_Al_bot  = -endplug_Al_tube & -sup_bot_aluminio & +sup_bot_endplug
-
-                celula_vacuo = openmc.Cell( region=regiao_comb_vacuo)
-                universo_elemento_combustivel.add_cell(celula_vacuo)
-
-                celula_comb_clad = openmc.Cell(fill=self.m_aluminio, region=regiao_comb_clad)
-                universo_elemento_combustivel.add_cell(celula_comb_clad)
-
-                celula_grafite_top = openmc.Cell(fill=self.m_grafite, region=regiao_grafite_top)
-                universo_elemento_combustivel.add_cell(celula_grafite_top)
-
-                celula_grafite_bot = openmc.Cell(fill=self.m_grafite, region=regiao_grafite_bot)
-                universo_elemento_combustivel.add_cell(celula_grafite_bot)
-
-                celula_Al_top = openmc.Cell(fill=self.m_aluminio, region=regiao_Al_top)
-                universo_elemento_combustivel.add_cell(celula_Al_top)
-
-                celula_Al_bot = openmc.Cell(fill=self.m_aluminio, region=regiao_Al_bot)
-                universo_elemento_combustivel.add_cell(celula_Al_bot)
-
-                celula_endplug_Al_top = openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_Al_top)
-                universo_elemento_combustivel.add_cell(celula_endplug_Al_top)
-
-                celula_endplug_Al_bot = openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_Al_bot)
-                universo_elemento_combustivel.add_cell(celula_endplug_Al_bot)
-
-                celula_endplug_water_top = openmc.Cell(fill=self.m_refrigerante, region=regiao_endplug_water_top)
-                universo_elemento_combustivel.add_cell(celula_endplug_water_top)
-
-                celula_endplug_water_bot = openmc.Cell(fill=self.m_refrigerante, region=regiao_endplug_water_bot)
-                universo_elemento_combustivel.add_cell(celula_endplug_water_bot)
-
-                # --- Refrigerante do Alumínio ---
-                regiao_cilindro_total_al = -sup_rad_clad
-                regiao_externa_al = ~regiao_cilindro_total_al
-
-                celula_externa_al = openmc.Cell(fill=self.m_refrigerante, region=regiao_externa_al)
-                universo_elemento_combustivel.add_cell(celula_externa_al)
-
-            elif tipoComb=="inox" or tipoComb=="inox_instrumentado":
+            if r_cyls[0] is not None:
+                regiao_pino_central = -r_cyls[0] & +z_planes[0] & -z_planes[-1]
                 celula_pino_central = openmc.Cell(fill=self.m_zirconio, region=regiao_pino_central)
                 universo_elemento_combustivel.add_cell(celula_pino_central)
-            
-                # Região Externa (Refrigerante): Tudo que está fora do cilindro mais externo
-                # ou acima/abaixo dos planos Z (complemento do cilindro maciço total)
-                regiao_cilindro_total = -r_cyls[-1] & +z_planes[0] & -z_planes[-1]
-                regiao_externa = ~regiao_cilindro_total
 
-                celula_externa = openmc.Cell(fill=self.m_refrigerante, region=regiao_externa)
-                universo_elemento_combustivel.add_cell(celula_externa)
-            
+            regiao_comb_vacuo = +r_cyls[-1] & -sup_rad_vacuo & +z_planes[0] & -z_planes[-1]
+            regiao_comb_clad = +sup_rad_vacuo & -sup_rad_clad & +sup_bot_grafite & -sup_top_grafite
+
+            if disco_altura > 0:
+                sup_sm_top = openmc.ZPlane(z0=comb_altura / 2.0 + disco_altura)
+                sup_sm_bot = openmc.ZPlane(z0=-(comb_altura / 2.0 + disco_altura))
+                universo_elemento_combustivel.add_cell(openmc.Cell(
+                    fill=self.m_disco_samario,
+                    region=-r_cyls[-1] & +z_planes[-1] & -sup_sm_top,
+                ))
+                universo_elemento_combustivel.add_cell(openmc.Cell(
+                    fill=self.m_disco_samario,
+                    region=-r_cyls[-1] & +sup_sm_bot & -z_planes[0],
+                ))
+                universo_elemento_combustivel.add_cell(openmc.Cell(
+                    region=+r_cyls[-1] & -sup_rad_vacuo & +z_planes[-1] & -sup_sm_top,
+                ))
+                universo_elemento_combustivel.add_cell(openmc.Cell(
+                    region=+r_cyls[-1] & -sup_rad_vacuo & +sup_sm_bot & -z_planes[0],
+                ))
+                z_graf_inner_top = sup_sm_top
+                z_graf_inner_bot = sup_sm_bot
+            else:
+                z_graf_inner_top = z_planes[-1]
+                z_graf_inner_bot = z_planes[0]
+
+            regiao_grafite_top = -sup_rad_vacuo & +z_graf_inner_top & -sup_top_grafite
+            regiao_grafite_bot = -sup_rad_vacuo & -z_graf_inner_bot & +sup_bot_grafite
+
+            universo_elemento_combustivel.add_cell(openmc.Cell(region=regiao_comb_vacuo))
+            universo_elemento_combustivel.add_cell(openmc.Cell(fill=mat_revestimento, region=regiao_comb_clad))
+            universo_elemento_combustivel.add_cell(openmc.Cell(fill=self.m_grafite, region=regiao_grafite_top))
+            universo_elemento_combustivel.add_cell(openmc.Cell(fill=self.m_grafite, region=regiao_grafite_bot))
+
+            if tipoComb == "aluminio":
+                sup_top_aluminio = openmc.ZPlane(z0=32.03)
+                sup_bot_aluminio = openmc.ZPlane(z0=-28.94)
+                endplug_Al_tube = openmc.ZCylinder(r=0.4450)
+
+                regiao_Al_top = -sup_rad_clad & +sup_top_grafite & -sup_top_aluminio
+                regiao_Al_bot = -sup_rad_clad & -sup_bot_grafite & +sup_bot_aluminio
+                regiao_endplug_water_top = -sup_rad_clad & +endplug_Al_tube & +sup_top_aluminio & -sup_top_endplug
+                regiao_endplug_Al_top = -endplug_Al_tube & +sup_top_aluminio & -sup_top_endplug
+                regiao_endplug_water_bot = -sup_rad_clad & +endplug_Al_tube & -sup_bot_aluminio & +sup_bot_endplug
+                regiao_endplug_Al_bot = -endplug_Al_tube & -sup_bot_aluminio & +sup_bot_endplug
+
+                universo_elemento_combustivel.add_cell(openmc.Cell(fill=self.m_aluminio, region=regiao_Al_top))
+                universo_elemento_combustivel.add_cell(openmc.Cell(fill=self.m_aluminio, region=regiao_Al_bot))
+                universo_elemento_combustivel.add_cell(openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_Al_top))
+                universo_elemento_combustivel.add_cell(openmc.Cell(fill=self.m_aluminio, region=regiao_endplug_Al_bot))
+                universo_elemento_combustivel.add_cell(openmc.Cell(fill=self.m_refrigerante, region=regiao_endplug_water_top))
+                universo_elemento_combustivel.add_cell(openmc.Cell(fill=self.m_refrigerante, region=regiao_endplug_water_bot))
+            else:
+                regiao_end_top = -sup_rad_clad & +sup_top_grafite & -sup_top_endplug
+                regiao_end_bot = -sup_rad_clad & -sup_bot_grafite & +sup_bot_endplug
+                universo_elemento_combustivel.add_cell(openmc.Cell(fill=self.m_SS304, region=regiao_end_top))
+                universo_elemento_combustivel.add_cell(openmc.Cell(fill=self.m_SS304, region=regiao_end_bot))
+
+            universo_elemento_combustivel.add_cell(
+                openmc.Cell(fill=self.m_refrigerante, region=~(-sup_rad_clad))
+            )
+
             return universo_elemento_combustivel
         
 
@@ -1088,7 +1149,19 @@ class TrigaIprR1:
 
         celula_graph_externo = openmc.Cell()
         celula_graph_externo.fill = self.m_grafite
-        celula_graph_externo.region = +raio_externo_1 & -raio_externo_2 & -externo_graph_top & +externo_graph_bot
+        # Mesa giratória: cavidade anular no topo do refletor, preenchida com ar.
+        # RFAS 4.2.3 / 10.2.2; receptáculos 27,4 cm (manual GA / RFAS).
+        # Raios: Silva 2014 Dim. 2 (relatório técnico), 29,05–38,51 cm.
+        mesa_r_int = openmc.ZCylinder(r=29.05)
+        mesa_r_ext = openmc.ZCylinder(r=38.51)
+        mesa_bot = openmc.ZPlane(z0=27.94 - 27.4)
+        celula_mesa_giratoria = openmc.Cell(name='mesa_giratoria')
+        celula_mesa_giratoria.fill = self.m_ar
+        celula_mesa_giratoria.region = +mesa_r_int & -mesa_r_ext & +mesa_bot & -externo_graph_top
+        celula_graph_externo.region = (
+            +raio_externo_1 & -raio_externo_2 & -externo_graph_top & +externo_graph_bot
+            & ~(+mesa_r_int & -mesa_r_ext & +mesa_bot & -externo_graph_top)
+        )
         celula_clad_externo_1 = openmc.Cell()
         celula_clad_externo_1.fill = self.m_aluminio
         celula_clad_externo_1.region = +cilindro_nucleo_ativo & -raio_externo_1 & -externo_graph_top & +externo_graph_bot
@@ -1120,6 +1193,7 @@ class TrigaIprR1:
         universo_core.add_cells(celulas_elemento)
         universo_core.add_cell(celula_refrigente_nucleo_ativo)
         universo_core.add_cell(celula_graph_externo)
+        universo_core.add_cell(celula_mesa_giratoria)
         universo_core.add_cell(celula_clad_externo_1)
         universo_core.add_cell(celula_clad_externo_2)
         universo_core.add_cell(celula_clad_externo_3)
@@ -1166,8 +1240,11 @@ class TrigaIprR1:
 
         if ifp_n_generation is None:
             ifp_n_generation = getattr(self, '_ifp_n_generation', None)
-        if ifp_n_generation is None and self._tem_score_ifp():
-            ifp_n_generation = min(10, inativo)
+        if ifp_n_generation is None:
+            for tally in self.lista_contagens:
+                if any(str(score).startswith('ifp-') for score in getattr(tally, 'scores', [])):
+                    ifp_n_generation = min(10, inativo)
+                    break
         if ifp_n_generation is not None:
             ifp_n_generation = min(int(ifp_n_generation), inativo)
             self.Settings.ifp_n_generation = ifp_n_generation
@@ -1206,8 +1283,7 @@ class TrigaIprR1:
                 filename = 'plot_' + basis + '_' + str(width) + '_' + str(pixels) + '_' + str(origin)
 
             ############ Plotar Secão Transversal
-            secao_transversal = openmc.Plot.from_geometry(geometria)
-            secao_transversal.type = 'slice'
+            secao_transversal = openmc.SlicePlot()
             secao_transversal.basis = basis
             secao_transversal.width = width
             secao_transversal.origin = origin
@@ -1248,8 +1324,7 @@ class TrigaIprR1:
             printv("############        Plot 3D         ############")
             printv("################################################")
             ############ Plotar em 3D
-            plot_3d = openmc.Plot.from_geometry(geometria)
-            plot_3d.type = 'voxel'
+            plot_3d = openmc.VoxelPlot()
             plot_3d.width = width
             plot_3d.origin = origin
             plot_3d.filename = 'plot_voxel_' + str(width) + '_' + str(pixels) + '_' + str(origin)
@@ -1258,7 +1333,7 @@ class TrigaIprR1:
             plot_3d.colors = colors
             
             ############ Exportar Plots e Plotar
-            plotagem = openmc.Plots(plot_3d)
+            plotagem = openmc.Plots([plot_3d])
             plotagem.export_to_xml()  
             openmc.plot_geometry()
             self.lista_materiais.export_to_xml()
@@ -1464,115 +1539,8 @@ class TrigaIprR1:
     def get_reactivity_dolar(self, Beff_pcm=800):
         return self.get_reactivity_pcm() / Beff_pcm
 
-    def _abrir_statepoint(self):
-        return openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
 
-    def _fator_fluxo(self, keff, nu_mean, fission_mean, potencia=250e3, Q=200e6):
-        e = 1.60218e-19
-        v = float(np.ravel(nu_mean)[0] / np.ravel(fission_mean)[0])
-        f = v * potencia / (e * Q * keff.nominal_value)
-        return f, v
 
-    def _fluxo_absoluto(self, flux_mean, flux_std, volume, f, keff, v, potencia=250e3, Q=200e6):
-        e = 1.60218e-19
-        flux_mean = np.ravel(np.array(flux_mean, dtype=float))
-        flux_std = np.ravel(np.array(flux_std, dtype=float))
-        volume = np.array(volume, dtype=float)
-        if volume.size == 1:
-            volume = np.full(flux_mean.shape, float(np.ravel(volume)[0]))
-        phi = f * flux_mean / volume
-        term_flux = (f / volume) * flux_std
-        term_keff = flux_mean * (-v * potencia / (e * Q * keff.nominal_value**2)) / volume * keff.std_dev
-        phi_std = np.sqrt(term_flux**2 + term_keff**2)
-        return phi, phi_std
-
-    def _imprimir_perfil(self, valores, erros, unidade="neutron/cm².s"):
-        for i, (val, err) in enumerate(zip(valores, erros)):
-            print(f"  Intervalo {i}:\t {val:.4e} +/- {err:.4e} [{unidade}]")
-
-    def _processar_reacoes(self, resultado):
-        printv("############   Trabalhando Dados    ############")
-        processado = {}
-        for nome, tally in resultado.items():
-            media = float(np.ravel(tally.mean)[0])
-            std = float(np.ravel(tally.std_dev)[0])
-            print(f"{nome:12s}: {media}  +/- {std}  Reactions per source particle")
-            processado[nome] = {'media': media, 'std': std}
-        return processado
-
-    def _processar_espectro(self, sp, flux, nu, fission, volume):
-        printv("############   Trabalhando Dados    ############")
-        keff = sp.keff
-        print("keff (valor combinado):", keff)
-        f, v = self._fator_fluxo(keff, nu.mean, fission.mean)
-        print("nu-fission:", float(np.ravel(nu.mean)[0]), "+/-", float(np.ravel(nu.std_dev)[0]), "[neutrons/source]")
-        print("Fission reaction rate:", float(np.ravel(fission.mean)[0]), "+/-", float(np.ravel(fission.std_dev)[0]), "[fissions/source]")
-        print("Neutrons per fission:", v)
-        print("Fluxo por intervalo de energia:")
-        phi, phi_std = self._fluxo_absoluto(flux.mean, flux.std_dev, volume, f, keff, v)
-        self._imprimir_perfil(phi, phi_std)
-        return {'keff': keff, 'nu': v, 'fluxo': phi, 'fluxo_std': phi_std, 'volume': volume}
-
-    def _processar_potencia(self, sp, fission, heating, potencia_ref=250e3, Q=200e6):
-        printv("############   Trabalhando Dados    ############")
-        keff = sp.keff
-        print("keff (valor combinado):", keff)
-        e = 1.602176565e-19
-        taxa = np.ravel(fission.mean).astype(float)
-        heat = float(np.ravel(heating.mean)[0])
-        source_per_sec = potencia_ref / (heat * e)
-        potencia = taxa * source_per_sec * Q * e
-        print("Potência em cada célula:")
-        for i, pot in enumerate(potencia):
-            print(f"\tCélula {i}: {pot} [W]")
-        soma = float(np.sum(potencia))
-        print("Potência total:", soma, "[J/s]")
-        N = max(len(potencia), 1)
-        pot_rel = (potencia / soma) * N if soma != 0 else potencia
-        print("Potência relativa:")
-        for i, rel in enumerate(pot_rel):
-            print(f"\tCélula {i}: {rel:.6f}")
-        return {
-            'keff': keff,
-            'potencia_W': potencia,
-            'potencia_relativa': pot_rel,
-            'source_per_sec': source_per_sec,
-        }
-
-    def _volume_combustivel(self):
-        n = max(len(self.celulas_elemento_combustivel), 1)
-        return n * math.pi * (1.78 ** 2) * 35.56
-
-    def _volume_nucleo(self):
-        return math.pi * (self.raio_nucleo_ativo ** 2) * (self.z_elemento_sup - self.z_elemento_inf)
-
-    def _tally_existe(self, nome):
-        return any(getattr(tally, 'name', None) == nome for tally in self.lista_contagens)
-
-    def _tem_score_ifp(self):
-        return any(
-            any(str(score).startswith('ifp-') for score in getattr(tally, 'scores', []))
-            for tally in self.lista_contagens
-        )
-
-    def _registrar_nu_fission(self):
-        if self._tally_existe('nu'):
-            return
-        nuclideos = ['U235', 'U238', 'Pu238', 'Pu239', 'Pu240', 'Pu241', 'Pu242', 'Am241', 'Am242']
-        tally_nu = openmc.Tally(name='nu')
-        tally_nu.scores = ['nu-fission']
-        tally_nu.nuclides = nuclideos
-        self.lista_contagens.append(tally_nu)
-        tally_fission = openmc.Tally(name='reaction rate')
-        tally_fission.scores = ['fission']
-        tally_fission.nuclides = nuclideos
-        self.lista_contagens.append(tally_fission)
-
-    def _ler_nu_fission(self, sp):
-        return (
-            sp.get_tally(scores=['nu-fission'], name='nu'),
-            sp.get_tally(scores=['fission'], name='reaction rate'),
-        )
 
 
     ################################################
@@ -1582,7 +1550,354 @@ class TrigaIprR1:
 
     lista_contagens = openmc.Tallies()
 
-    def contagem_taxa_de_reação(self, get=False, processar=False):
+
+
+    def contagem_global_nu_fission(self, get=False, processar=False, nuclideos=None):
+        """
+        Define e obtém globalmente os tallies para:
+        - Número de total de fissões
+        - Número de nêutrons produzidos por fissão
+        - Contagem de nêutrons produzidos por fissão (ν).
+
+
+        Uso:
+            get = False: Define os tallies
+            get = True: Obtem os tallies
+
+            processar = True: Exibe os resultados
+            processar = False: Não exibe os resultados
+
+            nuclideos = None: Usa nuclideos padrão
+            nuclideos = lista: Usa lista de nuclideos passada como argumento
+        """
+
+        if not get:
+            printv("################################################")
+            printv("############ Definição de contagem  ############")
+            printv("############      Nu / Fission      ############")
+            printv("################################################")
+
+            # Só adiciona se não existir ainda
+            if not any(getattr(tally, 'name', None) == 'Número de nêutrons produzidos por fissão' for tally in self.lista_contagens):
+                if nuclideos is None:
+                    printv("######       Nuclideos não definidos      #######")
+                    printv("######       Usando nuclideos padrão      #######")
+                    printv("######      ISSO NÃO É POSSÍVEL DE SER    #######")
+                    printv("######      ALTERADO POSTERIORMENTE!!!    #######")
+                    nuclideos = ['U235', 'U238', 'Pu238', 'Pu239', 'Pu240', 'Pu241', 'Pu242', 'Am241', 'Am242']
+
+                tally_nu = openmc.Tally(name='Número de nêutrons produzidos por fissão')
+                tally_nu.scores = ['nu-fission']
+                tally_nu.nuclides = nuclideos
+                self.lista_contagens.append(tally_nu)
+
+                tally_fission = openmc.Tally(name='Número de total de fissões')
+                tally_fission.scores = ['fission']
+                tally_fission.nuclides = nuclideos
+                self.lista_contagens.append(tally_fission)
+        else:
+            printv("################################################")
+            printv("############   Obtendo Contagem     ############")
+            printv("############      Nu / Fission      ############")
+            printv("################################################")
+
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
+
+            # Obtendo tallies
+            nu = sp.get_tally(scores=['nu-fission'], name='Número de nêutrons produzidos por fissão')
+            fission = sp.get_tally(scores=['fission'], name='Número de total de fissões')
+            
+            # Calculando neutrons por fissão (ν)
+            v = nu / fission
+            
+            # Formatando resultado como dicionário para retorno da função
+            resultado = {'nu': nu, 'fission': fission, 'v': v}
+
+            # Processando e exibindo resultados se solicitado
+            if processar:
+                printv("############   Trabalhando Dados    ############")
+                print("Neutrons produzidos por fissão (ν) globalmente:")
+                print("\t", v, "[neutrons/fissão]")
+            sp.close()
+            return resultado
+
+
+    def contagem_global_Q(self, get=False, processar=False, nuclideos=None):
+        """
+        Define e obtém globalmente os tallies para:
+        - Energia recuperável de fissão (kappa-fission)
+        - Número de total de fissões
+        - Energia recuperável por fissão (Q).
+
+        Q = kappa-fission / fission  [eV/fissão]
+
+
+        Uso:
+            get = False: Define os tallies
+            get = True: Obtem os tallies
+
+            processar = True: Exibe os resultados
+            processar = False: Não exibe os resultados
+
+            nuclideos = None: Usa nuclideos padrão
+            nuclideos = lista: Usa lista de nuclideos passada como argumento
+        """
+
+        if not get:
+            printv("################################################")
+            printv("############ Definição de contagem  ############")
+            printv("############      Q / Fission       ############")
+            printv("################################################")
+
+            self.contagem_global_nu_fission(nuclideos=nuclideos)
+
+            if not any(getattr(tally, 'name', None) == 'Energia recuperável de fissão' for tally in self.lista_contagens):
+                if nuclideos is None:
+                    printv("######       Nuclideos não definidos      #######")
+                    printv("######       Usando nuclideos padrão      #######")
+                    printv("######      ISSO NÃO É POSSÍVEL DE SER    #######")
+                    printv("######      ALTERADO POSTERIORMENTE!!!    #######")
+                    nuclideos = ['U235', 'U238', 'Pu238', 'Pu239', 'Pu240', 'Pu241', 'Pu242', 'Am241', 'Am242']
+
+                tally_kappa = openmc.Tally(name='Energia recuperável de fissão')
+                tally_kappa.scores = ['kappa-fission']
+                tally_kappa.nuclides = nuclideos
+                self.lista_contagens.append(tally_kappa)
+        else:
+            printv("################################################")
+            printv("############   Obtendo Contagem     ############")
+            printv("############      Q / Fission       ############")
+            printv("################################################")
+
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
+
+            kappa = sp.get_tally(scores=['kappa-fission'], name='Energia recuperável de fissão')
+            fission = sp.get_tally(scores=['fission'], name='Número de total de fissões')
+            Q = kappa / fission
+
+            resultado = {'kappa': kappa, 'fission': fission, 'Q': Q}
+
+            if processar:
+                printv("############   Trabalhando Dados    ############")
+                Q_mean = float(np.ravel(Q.mean)[0])
+                Q_std = float(np.ravel(Q.std_dev)[0])
+                print("Energia recuperável por fissão (Q) globalmente:")
+                print(f"\t {Q_mean:.6e} +/- {Q_std:.6e} [eV/fissão]")
+                print(f"\t {Q_mean/1e6:.6f} +/- {Q_std/1e6:.6f} [MeV/fissão]")
+            sp.close()
+            return resultado
+
+    def contagem_global_heating_local(self, get=False, processar=False, potencia=250e3):
+        """
+        Define e obtém o tally global de heating-local (sem filtro).
+        Normalização à potência do reator:
+
+            S = P / (H * e)
+
+        H em eV/fonte, P em W, e = 1.60218e-19 J/eV, S em fontes/s.
+
+        Uso:
+            get = False: Define o tally
+            get = True: Obtem o tally
+
+            processar = True: Exibe H e S
+            potencia = potência do reator [W] (padrão 250 kW)
+        """
+        nome = 'Energia depositada (heating-local)'
+
+        if not get:
+            printv("################################################")
+            printv("############ Definição de contagem  ############")
+            printv("############      heating-local     ############")
+            printv("################################################")
+
+            if not any(getattr(tally, 'name', None) == nome for tally in self.lista_contagens):
+                tally_heating = openmc.Tally(name=nome)
+                tally_heating.scores = ['heating-local']
+                self.lista_contagens.append(tally_heating)
+        else:
+            printv("################################################")
+            printv("############   Obtendo Contagem     ############")
+            printv("############      heating-local     ############")
+            printv("################################################")
+
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
+            heating = sp.get_tally(scores=['heating-local'], name=nome)
+            H = float(np.ravel(heating.mean)[0])
+            H_std = float(np.ravel(heating.std_dev)[0])
+            e = 1.60218e-19
+            S = potencia / (H * e)
+            resultado = {
+                'heating': heating,
+                'H': H,
+                'H_std': H_std,
+                'source_per_sec': S,
+                'potencia': potencia,
+            }
+            if processar:
+                printv("############   Trabalhando Dados    ############")
+                print(f"heating-local: {H:.6e} +/- {H_std:.6e} [eV/fonte]")
+                print(f"Potência: {potencia} [W]")
+                print(f"Taxa de fontes: {S:.6e} [1/s]")
+            sp.close()
+            return resultado
+
+    def contagem_elemento_nu_fission(self, get=False, processar=False, nuclideos=None, chave='A1'):
+        """
+        Define e obtém para um elemento combustível específico os tallies para:
+        - Número de total de fissões
+        - Número de nêutrons produzidos por fissão
+        
+        E calcula a contagem de nêutrons produzidos por fissão (ν).
+
+
+        Uso:
+            get = False: Define os tallies
+            get = True: Obtem os tallies
+
+            processar = True: Exibe os resultados
+            processar = False: Não exibe os resultados
+
+            nuclideos = None: Usa nuclideos padrão
+            nuclideos = lista: Usa lista de nuclideos passada como argumento
+
+            chave = string: Usa chave do elemento combustível passada como argumento
+        """
+        if chave not in self.elementos:
+            print(f"Erro: posição '{chave}' não existe no núcleo.")
+            exit(1)
+        if type(self.elementos[chave].load) != int:
+            print(f"Erro: posição '{chave}' não é um elemento combustível.")
+            exit(1)
+
+        # Nome dos tallies usados em get e set
+        nome_nu = f'nu {chave}'
+        nome_fission = f'reaction rate {chave}'
+
+        if not get:
+            printv("################################################")
+            printv("############ Definição de contagem  ############")
+            printv("############  Nu / Fission elemento ############")
+            printv("################################################")
+
+            if not any(getattr(tally, 'name', None) == nome_nu for tally in self.lista_contagens):
+                if nuclideos is None:
+                    printv("######       Nuclideos não definidos      #######")
+                    printv("######       Usando nuclideos padrão      #######")
+                    nuclideos = ['U235', 'U238', 'Pu238', 'Pu239', 'Pu240', 'Pu241', 'Pu242', 'Am241', 'Am242']
+
+                filtro_elemento = openmc.CellFilter(self.celulas_por_chave[chave])
+
+                tally_nu = openmc.Tally(name=nome_nu)
+                tally_nu.filters = [filtro_elemento]
+                tally_nu.scores = ['nu-fission']
+                tally_nu.nuclides = nuclideos
+                self.lista_contagens.append(tally_nu)
+
+                tally_fission = openmc.Tally(name=nome_fission)
+                tally_fission.filters = [filtro_elemento]
+                tally_fission.scores = ['fission']
+                tally_fission.nuclides = nuclideos
+                self.lista_contagens.append(tally_fission)
+        else:
+            printv("################################################")
+            printv("############   Obtendo Contagem     ############")
+            printv("############  Nu / Fission elemento ############")
+            printv("################################################")
+
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
+
+            # Obtendo tallies
+            nu = sp.get_tally(scores=['nu-fission'], name=nome_nu)
+            fission = sp.get_tally(scores=['fission'], name=nome_fission)
+
+            # Calculando neutrons por fissão (ν)
+            v = nu / fission
+
+            # Formatando resultado como dicionário para retorno da função
+            resultado = {'nu': nu, 'fission': fission, 'v': v, 'chave': chave}
+
+            # Processando e exibindo resultados se solicitado
+            if processar:
+                printv("############   Trabalhando Dados    ############")
+                print(f"Neutrons produzidos por fissão (ν) no elemento {chave}:")
+                print("\t", v, "[neutrons/fissão]")
+            sp.close()
+            return resultado
+
+
+
+
+
+
+    def contagem_global_velocidade_inversa_direta(self, get=False, processar=False):
+        """
+        Define e obtém globalmente os tallies para:
+        - Velocidade inversa (método direto)
+
+        O tally inverse-velocity acumula 1/v ao longo da trajetória.
+        Como ds = v * dt, isso é o tempo de voo do nêutron, em segundos por partícula-fonte.
+
+        Sem filtro a média é o tempo médio até o nêutron sumir (absorção, fuga ou fissão), ou seja, o prompt removal lifetime ℓ.
+        Esse lifetime é o peso só do fluxo direto, não adjunto. O IFP estima o mesmo (ℓ ou Λ = ℓ / k) com peso adjunto.
+
+        Uso:
+            get = False: Define os tallies
+            get = True: Obtem os tallies
+
+            processar = True: Exibe os resultados
+            processar = False: Não exibe os resultados
+        """
+        if not get:
+            printv("################################################")
+            printv("############ Definição de contagem  ############")
+            printv("############    Inverse-Velocity    ############")
+            printv("################################################")
+
+            tally_inverse = openmc.Tally(name='Inverse-velocity')
+            tally_inverse.scores = ['inverse-velocity']
+            self.lista_contagens.append(tally_inverse)
+        else:
+            printv("################################################")
+            printv("############   Obtendo Contagem     ############")
+            printv("############    Inverse-Velocity    ############")
+            printv("################################################")
+
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
+            resultado = sp.get_tally(scores=['inverse-velocity'], name='Inverse-velocity')
+            if processar:
+                printv("############   Trabalhando Dados    ############")
+                print(" Prompt removal lifetime:")
+                print("\t", resultado, "[s]")
+            sp.close()
+            return resultado
+
+
+
+
+
+
+    def contagem_combustivel_taxas_de_reação(self, get=False, processar=False, potencia=250e3):
+        """
+        Define e obtém para o combustível os tallies para:
+        - Taxa de reação total
+        - Taxa de reação de espalhamento elástico
+        - Taxa de reação de espalhamento total
+        - Taxa de absorção
+        - Taxa de captura radiativa
+        - Taxa de reação de fissão
+
+        Com get=True as taxas são convertidas para reações/s na potência do reator usando heating-local global: S = P / (H * e).
+
+        Uso:
+            get = False: Define os tallies
+            get = True: Obtem os tallies
+
+            processar = True: Exibe os resultados
+            processar = False: Não exibe os resultados
+
+            potencia = potência do reator [W] (padrão 250 kW)
+        """
         if not get:
             printv("################################################")
             printv("############ Definição de contagem  ############")
@@ -1620,13 +1935,15 @@ class TrigaIprR1:
             fission_tally.filters = [filtro_combustivel]
             fission_tally.scores = ['fission']
             self.lista_contagens.append(fission_tally)
+
+            self.contagem_global_heating_local()
         else:
             printv("################################################")
             printv("############   Obtendo Contagem     ############")
             printv("############        Reaction        ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
             resultado = {
                 'total': sp.get_tally(scores=['total'], name='Taxa de reação total no combustível'),
                 'elastic': sp.get_tally(scores=['elastic'], name='Taxa de reação de espalhamento elastica no combustível'),
@@ -1635,139 +1952,47 @@ class TrigaIprR1:
                 '(n,gamma)': sp.get_tally(scores=['(n,gamma)'], name='Taxa de captura radiativa no combustível'),
                 'fission': sp.get_tally(scores=['fission'], name='Taxa total de reacao de fissao no combustível'),
             }
-            if processar:
-                resultado = self._processar_reacoes(resultado)
-            sp.close()
-            return resultado
 
+            heating = sp.get_tally(scores=['heating-local'], name='Energia depositada (heating-local)')
+            H = float(np.ravel(heating.mean)[0])
+            H_std = float(np.ravel(heating.std_dev)[0])
+            e = 1.60218e-19
+            S = potencia / (H * e)
 
-    def contagem_velocidade_inversa(self, get=False, processar=False):
-        if not get:
-            printv("################################################")
-            printv("############ Definição de contagem  ############")
-            printv("############    Inverse-Velocity    ############")
-            printv("################################################")
+            processado = {
+                'heating': H,
+                'heating_std': H_std,
+                'potencia': potencia,
+                'source_per_sec': S,
+            }
+            for nome, tally in resultado.items():
+                media = float(np.ravel(tally.mean)[0])
+                std = float(np.ravel(tally.std_dev)[0])
+                taxa = S * media
+                term_tally = S * std
+                term_H = taxa * (H_std / H) if H != 0 else 0.0
+                taxa_std = float(np.sqrt(term_tally**2 + term_H**2))
+                processado[nome] = {'media': taxa, 'std': taxa_std}
 
-            tally_inverse = openmc.Tally(name='Inverse-velocity')
-            tally_inverse.scores = ['inverse-velocity']
-            self.lista_contagens.append(tally_inverse)
-        else:
-            printv("################################################")
-            printv("############   Obtendo Contagem     ############")
-            printv("############    Inverse-Velocity    ############")
-            printv("################################################")
-
-            sp = self._abrir_statepoint()
-            resultado = sp.get_tally(scores=['inverse-velocity'], name='Inverse-velocity')
             if processar:
                 printv("############   Trabalhando Dados    ############")
-                media = float(np.ravel(resultado.mean)[0])
-                std = float(np.ravel(resultado.std_dev)[0])
-                print(" Prompt removal lifetime:")
-                print("\t", media, "+/-", std)
-                resultado = {'media': media, 'std': std}
+                print(f"heating-local: {H:.6e} +/- {H_std:.6e} [eV/fonte]")
+                print(f"Potência: {potencia} [W]")
+                print(f"Taxa de fontes: {S:.6e} [1/s]")
+                print("Taxas de reação no combustível:")
+                for nome in resultado:
+                    print(f"{nome:12s}: {processado[nome]['media']:.6e}  +/- {processado[nome]['std']:.6e}  [reações/s]")
+
+            resultado = processado
             sp.close()
             return resultado
 
-    def contagem_nu_fission(self, get=False, processar=False):
-        if not get:
-            printv("################################################")
-            printv("############ Definição de contagem  ############")
-            printv("############      Nu / Fission      ############")
-            printv("################################################")
 
-            self._registrar_nu_fission()
-        else:
-            printv("################################################")
-            printv("############   Obtendo Contagem     ############")
-            printv("############      Nu / Fission      ############")
-            printv("################################################")
 
-            sp = self._abrir_statepoint()
-            nu, fission = self._ler_nu_fission(sp)
-            resultado = {'nu': nu, 'fission': fission}
-            if processar:
-                printv("############   Trabalhando Dados    ############")
-                nu_mean = float(np.ravel(resultado['nu'].mean)[0])
-                fiss_mean = float(np.ravel(resultado['fission'].mean)[0])
-                v = nu_mean / fiss_mean
-                print(" Neutrons per fission:")
-                print("\t", v, "[neutrons/fissão]")
-                resultado = {'nu': nu_mean, 'fission': fiss_mean, 'neutrons_per_fission': v}
-            sp.close()
-            return resultado
 
-    def _processar_ifp(self, sp):
-        from uncertainties import ufloat
-        printv("############   Trabalhando Dados    ############")
-        keff = sp.keff
-        print("keff:", keff)
 
-        den_t = sp.get_tally(scores=['ifp-denominator'], name='IFP denominator')
-        time_t = sp.get_tally(scores=['ifp-time-numerator'], name='IFP time numerator')
-        beta_t = sp.get_tally(scores=['ifp-beta-numerator'], name='IFP beta numerator')
 
-        den = ufloat(float(np.ravel(den_t.mean)[0]), float(np.ravel(den_t.std_dev)[0]))
-        tempo = ufloat(float(np.ravel(time_t.mean)[0]), float(np.ravel(time_t.std_dev)[0]))
-        Lambda = tempo / (den * keff)
-        ell = Lambda * keff
-
-        beta_i = [
-            ufloat(float(m), float(s)) / den
-            for m, s in zip(np.ravel(beta_t.mean), np.ravel(beta_t.std_dev))
-        ]
-        beta_eff = sum(beta_i)
-
-        print("Lambda_eff:", Lambda, "[s]")
-        print("ell = Lambda*k:", ell, "[s]")
-        print("beta_eff:", beta_eff, f"({beta_eff * 1e5} pcm)")
-        for i, beta in enumerate(beta_i, start=1):
-            print(f"  beta_{i}: {beta}")
-
-        return {
-            'keff': keff,
-            'Lambda_eff': Lambda,
-            'ell': ell,
-            'beta_eff': beta_eff,
-            'beta_i': beta_i,
-        }
-
-    def _processar_cinetica(self, sp, atrasados, nu):
-        from uncertainties import ufloat
-        printv("############   Trabalhando Dados    ############")
-        keff = sp.keff
-        print("keff:", keff)
-
-        nu_u = ufloat(float(np.ravel(nu.mean)[0]), float(np.ravel(nu.std_dev)[0]))
-        dnf = np.ravel(atrasados.get_values(scores=['delayed-nu-fission']))
-        dnf_std = np.ravel(atrasados.get_values(scores=['delayed-nu-fission'], value='std_dev'))
-        dec = np.ravel(atrasados.get_values(scores=['decay-rate']))
-        dec_std = np.ravel(atrasados.get_values(scores=['decay-rate'], value='std_dev'))
-
-        beta_i = []
-        lambda_i = []
-        for i, (d, ds, c, cs) in enumerate(zip(dnf, dnf_std, dec, dec_std), start=1):
-            d_u = ufloat(float(d), float(ds))
-            c_u = ufloat(float(c), float(cs))
-            beta = d_u / nu_u
-            lam = c_u / d_u if d != 0 else ufloat(float('nan'), float('nan'))
-            beta_i.append(beta)
-            lambda_i.append(lam)
-            print(f"  grupo {i}: beta={beta}  lambda={lam} [1/s]")
-
-        beta_eff = sum(beta_i)
-        print("nu-fission:", nu_u)
-        print("beta (nao adjunto):", beta_eff, f"({beta_eff * 1e5} pcm)")
-
-        return {
-            'keff': keff,
-            'nu': nu_u,
-            'beta_i': beta_i,
-            'lambda_i': lambda_i,
-            'beta': beta_eff,
-        }
-
-    def contagem_ifp(self, get=False, processar=False, n_grupos=6, ifp_n_generation=10):
+    def contagem_cinetica_metodo_ifp(self, get=False, processar=False, n_grupos=6, ifp_n_generation=10):
         if not get:
             printv("################################################")
             printv("############ Definição de contagem  ############")
@@ -1777,18 +2002,18 @@ class TrigaIprR1:
             self._ifp_n_generation = ifp_n_generation
             grupos = list(range(1, n_grupos + 1))
 
-            if not self._tally_existe('IFP time numerator'):
+            if not any(getattr(tally, 'name', None) == 'IFP time numerator' for tally in self.lista_contagens):
                 tally_time = openmc.Tally(name='IFP time numerator')
                 tally_time.scores = ['ifp-time-numerator']
                 self.lista_contagens.append(tally_time)
 
-            if not self._tally_existe('IFP beta numerator'):
+            if not any(getattr(tally, 'name', None) == 'IFP beta numerator' for tally in self.lista_contagens):
                 tally_beta = openmc.Tally(name='IFP beta numerator')
                 tally_beta.scores = ['ifp-beta-numerator']
                 tally_beta.filters = [openmc.DelayedGroupFilter(grupos)]
                 self.lista_contagens.append(tally_beta)
 
-            if not self._tally_existe('IFP denominator'):
+            if not any(getattr(tally, 'name', None) == 'IFP denominator' for tally in self.lista_contagens):
                 tally_den = openmc.Tally(name='IFP denominator')
                 tally_den.scores = ['ifp-denominator']
                 self.lista_contagens.append(tally_den)
@@ -1798,18 +2023,46 @@ class TrigaIprR1:
             printv("############           IFP          ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
             resultado = {
                 'time': sp.get_tally(scores=['ifp-time-numerator'], name='IFP time numerator'),
                 'beta': sp.get_tally(scores=['ifp-beta-numerator'], name='IFP beta numerator'),
                 'denominator': sp.get_tally(scores=['ifp-denominator'], name='IFP denominator'),
             }
             if processar:
-                resultado = self._processar_ifp(sp)
+                from uncertainties import ufloat
+                printv("############   Trabalhando Dados    ############")
+                keff = sp.keff
+                print("keff:", keff)
+
+                den = ufloat(float(np.ravel(resultado['denominator'].mean)[0]), float(np.ravel(resultado['denominator'].std_dev)[0]))
+                tempo = ufloat(float(np.ravel(resultado['time'].mean)[0]), float(np.ravel(resultado['time'].std_dev)[0]))
+                Lambda = tempo / (den * keff)
+                ell = Lambda * keff
+
+                beta_i = [
+                    ufloat(float(m), float(s)) / den
+                    for m, s in zip(np.ravel(resultado['beta'].mean), np.ravel(resultado['beta'].std_dev))
+                ]
+                beta_eff = sum(beta_i)
+
+                print("Lambda_eff:", Lambda, "[s]")
+                print("ell = Lambda*k:", ell, "[s]")
+                print("beta_eff:", beta_eff, f"({beta_eff * 1e5} pcm)")
+                for i, beta in enumerate(beta_i, start=1):
+                    print(f"  beta_{i}: {beta}")
+
+                resultado = {
+                    'keff': keff,
+                    'Lambda_eff': Lambda,
+                    'ell': ell,
+                    'beta_eff': beta_eff,
+                    'beta_i': beta_i,
+                }
             sp.close()
             return resultado
 
-    def contagem_cinetica(self, get=False, processar=False, n_grupos=6):
+    def contagem_cinetica_metodo_direto(self, get=False, processar=False, n_grupos=6):
         if not get:
             printv("################################################")
             printv("############ Definição de contagem  ############")
@@ -1817,13 +2070,13 @@ class TrigaIprR1:
             printv("################################################")
 
             grupos = list(range(1, n_grupos + 1))
-            if not self._tally_existe('Cinetica atrasados'):
+            if not any(getattr(tally, 'name', None) == 'Cinetica atrasados' for tally in self.lista_contagens):
                 tally_atrasados = openmc.Tally(name='Cinetica atrasados')
                 tally_atrasados.filters = [openmc.DelayedGroupFilter(grupos)]
                 tally_atrasados.scores = ['delayed-nu-fission', 'decay-rate']
                 self.lista_contagens.append(tally_atrasados)
 
-            if not self._tally_existe('nu-fission cinetica'):
+            if not any(getattr(tally, 'name', None) == 'nu-fission cinetica' for tally in self.lista_contagens):
                 tally_nu = openmc.Tally(name='nu-fission cinetica')
                 tally_nu.scores = ['nu-fission']
                 self.lista_contagens.append(tally_nu)
@@ -1833,13 +2086,47 @@ class TrigaIprR1:
             printv("############    Cinetica atrasados  ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
             resultado = {
                 'atrasados': sp.get_tally(name='Cinetica atrasados'),
                 'nu': sp.get_tally(scores=['nu-fission'], name='nu-fission cinetica'),
             }
             if processar:
-                resultado = self._processar_cinetica(sp, resultado['atrasados'], resultado['nu'])
+                from uncertainties import ufloat
+                printv("############   Trabalhando Dados    ############")
+                keff = sp.keff
+                print("keff:", keff)
+
+                atrasados = resultado['atrasados']
+                nu = resultado['nu']
+                nu_u = ufloat(float(np.ravel(nu.mean)[0]), float(np.ravel(nu.std_dev)[0]))
+                dnf = np.ravel(atrasados.get_values(scores=['delayed-nu-fission']))
+                dnf_std = np.ravel(atrasados.get_values(scores=['delayed-nu-fission'], value='std_dev'))
+                dec = np.ravel(atrasados.get_values(scores=['decay-rate']))
+                dec_std = np.ravel(atrasados.get_values(scores=['decay-rate'], value='std_dev'))
+
+                beta_i = []
+                lambda_i = []
+                for i, (d, ds, c, cs) in enumerate(zip(dnf, dnf_std, dec, dec_std), start=1):
+                    d_u = ufloat(float(d), float(ds))
+                    c_u = ufloat(float(c), float(cs))
+                    beta = d_u / nu_u
+                    lam = c_u / d_u if d != 0 else ufloat(float('nan'), float('nan'))
+                    beta_i.append(beta)
+                    lambda_i.append(lam)
+                    print(f"  grupo {i}: beta={beta}  lambda={lam} [1/s]")
+
+                beta_eff = sum(beta_i)
+                print("nu-fission:", nu_u)
+                print("beta (nao adjunto):", beta_eff, f"({beta_eff * 1e5} pcm)")
+
+                resultado = {
+                    'keff': keff,
+                    'nu': nu_u,
+                    'beta_i': beta_i,
+                    'lambda_i': lambda_i,
+                    'beta': beta_eff,
+                }
             sp.close()
             return resultado
         
@@ -1857,25 +2144,40 @@ class TrigaIprR1:
             ]
             fuel_element_tally.scores = ['flux']
             self.lista_contagens.append(fuel_element_tally)
-            self._registrar_nu_fission()
+            self.contagem_global_heating_local()
         else:
             printv("################################################")
             printv("############   Obtendo Contagem     ############")
             printv("############          Fuel          ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
-            nu, fission = self._ler_nu_fission(sp)
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
             resultado = {
                 'flux': sp.get_tally(scores=['flux'], name='Fluxo no universo combustível'),
-                'nu': nu,
-                'fission': fission,
             }
             if processar:
-                resultado = self._processar_espectro(
-                    sp, resultado['flux'], resultado['nu'], resultado['fission'],
-                    self._volume_combustivel(),
-                )
+                printv("############   Trabalhando Dados    ############")
+                e = 1.60218e-19
+                potencia = 250e3
+                heating = sp.get_tally(scores=['heating-local'], name='Energia depositada (heating-local)')
+                H = float(np.ravel(heating.mean)[0])
+                H_std = float(np.ravel(heating.std_dev)[0])
+                S = potencia / (H * e)
+                print(f"heating-local: {H:.6e} +/- {H_std:.6e} [eV/fonte]")
+                print(f"Taxa de fontes: {S:.6e} [1/s]")
+                print("Fluxo por intervalo de energia:")
+                n = max(len(self.celulas_elemento_combustivel), 1)
+                volume = n * math.pi * (1.78 ** 2) * 35.56
+                flux_mean = np.ravel(np.array(resultado['flux'].mean, dtype=float))
+                flux_std = np.ravel(np.array(resultado['flux'].std_dev, dtype=float))
+                volume = np.full(flux_mean.shape, float(volume))
+                phi = S * flux_mean / volume
+                term_flux = (S / volume) * flux_std
+                term_H = phi * (H_std / H) if H != 0 else 0.0
+                phi_std = np.sqrt(term_flux**2 + term_H**2)
+                for i, (val, err) in enumerate(zip(phi, phi_std)):
+                    print(f"  Intervalo {i}:\t {val:.4e} +/- {err:.4e} [neutron/cm².s]")
+                resultado = {'heating': H, 'source_per_sec': S, 'fluxo': phi, 'fluxo_std': phi_std, 'volume': volume}
             sp.close()
             return resultado
         
@@ -1894,25 +2196,39 @@ class TrigaIprR1:
             ]
             fuel_element_tally.scores = ['flux']
             self.lista_contagens.append(fuel_element_tally)
-            self._registrar_nu_fission()
+            self.contagem_global_heating_local()
         else:
             printv("################################################")
             printv("############   Obtendo Contagem     ############")
             printv("############         Core           ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
-            nu, fission = self._ler_nu_fission(sp)
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
             resultado = {
                 'flux': sp.get_tally(scores=['flux'], name='Espectro de fluxo no núcleo'),
-                'nu': nu,
-                'fission': fission,
             }
             if processar:
-                resultado = self._processar_espectro(
-                    sp, resultado['flux'], resultado['nu'], resultado['fission'],
-                    self._volume_nucleo(),
-                )
+                printv("############   Trabalhando Dados    ############")
+                e = 1.60218e-19
+                potencia = 250e3
+                heating = sp.get_tally(scores=['heating-local'], name='Energia depositada (heating-local)')
+                H = float(np.ravel(heating.mean)[0])
+                H_std = float(np.ravel(heating.std_dev)[0])
+                S = potencia / (H * e)
+                print(f"heating-local: {H:.6e} +/- {H_std:.6e} [eV/fonte]")
+                print(f"Taxa de fontes: {S:.6e} [1/s]")
+                print("Fluxo por intervalo de energia:")
+                volume = math.pi * (self.raio_nucleo_ativo ** 2) * (self.z_elemento_sup - self.z_elemento_inf)
+                flux_mean = np.ravel(np.array(resultado['flux'].mean, dtype=float))
+                flux_std = np.ravel(np.array(resultado['flux'].std_dev, dtype=float))
+                volume = np.full(flux_mean.shape, float(volume))
+                phi = S * flux_mean / volume
+                term_flux = (S / volume) * flux_std
+                term_H = phi * (H_std / H) if H != 0 else 0.0
+                phi_std = np.sqrt(term_flux**2 + term_H**2)
+                for i, (val, err) in enumerate(zip(phi, phi_std)):
+                    print(f"  Intervalo {i}:\t {val:.4e} +/- {err:.4e} [neutron/cm².s]")
+                resultado = {'heating': H, 'source_per_sec': S, 'fluxo': phi, 'fluxo_std': phi_std, 'volume': volume}
             sp.close()
             return resultado
         
@@ -1933,34 +2249,39 @@ class TrigaIprR1:
             tally_axial.filters = [openmc.MeshFilter(mesh_axial)]
             tally_axial.scores = ['flux']
             self.lista_contagens.append(tally_axial)
-            self._registrar_nu_fission()
+            self.contagem_global_heating_local()
         else:
             printv("################################################")
             printv("############   Obtendo Contagem     ############")
             printv("############        MeshAxial       ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
-            nu, fission = self._ler_nu_fission(sp)
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
             resultado = {
                 'flux': sp.get_tally(scores=['flux'], name='TMESH4_Axial_Custom_Cylindrical'),
-                'nu': nu,
-                'fission': fission,
             }
             if processar:
                 printv("############   Trabalhando Dados    ############")
-                keff = sp.keff
-                print("keff (valor combinado):", keff)
-                f, v = self._fator_fluxo(keff, resultado['nu'].mean, resultado['fission'].mean)
+                e = 1.60218e-19
+                potencia = 250e3
+                heating = sp.get_tally(scores=['heating-local'], name='Energia depositada (heating-local)')
+                H = float(np.ravel(heating.mean)[0])
+                H_std = float(np.ravel(heating.std_dev)[0])
+                S = potencia / (H * e)
                 n = resultado['flux'].mean.size
                 dz = (self.z_modelo_sup - self.z_modelo_inf) / n
                 volume = math.pi * (self.raio_nucleo_ativo ** 2) * dz
-                phi, phi_std = self._fluxo_absoluto(
-                    resultado['flux'].mean, resultado['flux'].std_dev, volume, f, keff, v,
-                )
+                flux_mean = np.ravel(np.array(resultado['flux'].mean, dtype=float))
+                flux_std = np.ravel(np.array(resultado['flux'].std_dev, dtype=float))
+                volume_arr = np.full(flux_mean.shape, float(volume))
+                phi = S * flux_mean / volume_arr
+                term_flux = (S / volume_arr) * flux_std
+                term_H = phi * (H_std / H) if H != 0 else 0.0
+                phi_std = np.sqrt(term_flux**2 + term_H**2)
                 print("Mesh Axial:")
-                self._imprimir_perfil(phi, phi_std)
-                resultado = {'keff': keff, 'nu': v, 'fluxo': phi, 'fluxo_std': phi_std, 'volume_bin': volume}
+                for i, (val, err) in enumerate(zip(phi, phi_std)):
+                    print(f"  Intervalo {i}:\t {val:.4e} +/- {err:.4e} [neutron/cm².s]")
+                resultado = {'heating': H, 'source_per_sec': S, 'fluxo': phi, 'fluxo_std': phi_std, 'volume_bin': volume}
             sp.close()
             return resultado
 
@@ -1999,33 +2320,40 @@ class TrigaIprR1:
             ]
             tally_axial.scores = [scores[tipo]]
             self.lista_contagens.append(tally_axial)
-            self._registrar_nu_fission()
+            self.contagem_global_heating_local()
         else:
             printv("################################################")
             printv("############   Obtendo Contagem     ############")
             printv("############  Mesh axial elemento   ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
             resultado = sp.get_tally(scores=[scores[tipo]], name=f'{tipo} axial {chave}')
             if processar:
                 printv("############   Trabalhando Dados    ############")
-                keff = sp.keff
-                print("keff (valor combinado):", keff)
-                nu, fission = self._ler_nu_fission(sp)
-                f, v = self._fator_fluxo(keff, nu.mean, fission.mean)
+                e = 1.60218e-19
+                potencia = 250e3
+                heating = sp.get_tally(scores=['heating-local'], name='Energia depositada (heating-local)')
+                H = float(np.ravel(heating.mean)[0])
+                H_std = float(np.ravel(heating.std_dev)[0])
+                S = potencia / (H * e)
                 n = resultado.mean.size
                 dz = (self.z_elemento_sup - self.z_elemento_inf) / n
                 volume = math.pi * (2.0 ** 2) * dz
-                phi, phi_std = self._fluxo_absoluto(
-                    resultado.mean, resultado.std_dev, volume, f, keff, v,
-                )
+                flux_mean = np.ravel(np.array(resultado.mean, dtype=float))
+                flux_std = np.ravel(np.array(resultado.std_dev, dtype=float))
+                volume_arr = np.full(flux_mean.shape, float(volume))
+                phi = S * flux_mean / volume_arr
+                term_flux = (S / volume_arr) * flux_std
+                term_H = phi * (H_std / H) if H != 0 else 0.0
+                phi_std = np.sqrt(term_flux**2 + term_H**2)
                 print(f"{tipo} axial {chave}:")
                 unidade = "neutron/cm².s" if tipo == 'Fluxo' else "reactions/cm³.s"
-                self._imprimir_perfil(phi, phi_std, unidade)
+                for i, (val, err) in enumerate(zip(phi, phi_std)):
+                    print(f"  Intervalo {i}:\t {val:.4e} +/- {err:.4e} [{unidade}]")
                 resultado = {
-                    'keff': keff,
-                    'nu': v,
+                    'heating': H,
+                    'source_per_sec': S,
                     'perfil': phi,
                     'perfil_std': phi_std,
                     'volume_bin': volume,
@@ -2049,35 +2377,39 @@ class TrigaIprR1:
             tally_radial.filters = [openmc.MeshFilter(mesh_radial)]
             tally_radial.scores = ['flux']
             self.lista_contagens.append(tally_radial)
-            self._registrar_nu_fission()
+            self.contagem_global_heating_local()
         else:
             printv("################################################")
             printv("############   Obtendo Contagem     ############")
             printv("############       MeshRadial       ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
-            nu, fission = self._ler_nu_fission(sp)
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
             resultado = {
                 'flux': sp.get_tally(scores=['flux'], name='TMESH4_Radial_Custom_Cylindrical'),
-                'nu': nu,
-                'fission': fission,
             }
             if processar:
                 printv("############   Trabalhando Dados    ############")
-                keff = sp.keff
-                print("keff (valor combinado):", keff)
-                f, v = self._fator_fluxo(keff, resultado['nu'].mean, resultado['fission'].mean)
+                e = 1.60218e-19
+                potencia = 250e3
+                heating = sp.get_tally(scores=['heating-local'], name='Energia depositada (heating-local)')
+                H = float(np.ravel(heating.mean)[0])
+                H_std = float(np.ravel(heating.std_dev)[0])
+                S = potencia / (H * e)
                 n = resultado['flux'].mean.size
                 r_div = np.linspace(0.0, self.raio_modelo, n + 1)
                 h = self.z_elemento_sup - self.z_elemento_inf
                 volume = math.pi * (r_div[1:]**2 - r_div[:-1]**2) * h
-                phi, phi_std = self._fluxo_absoluto(
-                    resultado['flux'].mean, resultado['flux'].std_dev, volume, f, keff, v,
-                )
+                flux_mean = np.ravel(np.array(resultado['flux'].mean, dtype=float))
+                flux_std = np.ravel(np.array(resultado['flux'].std_dev, dtype=float))
+                phi = S * flux_mean / volume
+                term_flux = (S / volume) * flux_std
+                term_H = phi * (H_std / H) if H != 0 else 0.0
+                phi_std = np.sqrt(term_flux**2 + term_H**2)
                 print("Mesh Radial:")
-                self._imprimir_perfil(phi, phi_std)
-                resultado = {'keff': keff, 'nu': v, 'fluxo': phi, 'fluxo_std': phi_std, 'volume': volume, 'r': r_div}
+                for i, (val, err) in enumerate(zip(phi, phi_std)):
+                    print(f"  Intervalo {i}:\t {val:.4e} +/- {err:.4e} [neutron/cm².s]")
+                resultado = {'heating': H, 'source_per_sec': S, 'fluxo': phi, 'fluxo_std': phi_std, 'volume': volume, 'r': r_div}
             sp.close()
             return resultado
 
@@ -2103,31 +2435,37 @@ class TrigaIprR1:
             ]
             tally_radial.scores = ['flux']
             self.lista_contagens.append(tally_radial)
-            self._registrar_nu_fission()
+            self.contagem_global_heating_local()
         else:
             printv("################################################")
             printv("############   Obtendo Contagem     ############")
             printv("############    MeshRadial energia  ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
             resultado = sp.get_tally(scores=['flux'], name='MESH_Radial')
             if processar:
                 printv("############   Trabalhando Dados    ############")
-                keff = sp.keff
-                print("keff (valor combinado):", keff)
-                nu, fission = self._ler_nu_fission(sp)
-                f, v = self._fator_fluxo(keff, nu.mean, fission.mean)
+                e = 1.60218e-19
+                potencia = 250e3
+                heating = sp.get_tally(scores=['heating-local'], name='Energia depositada (heating-local)')
+                H = float(np.ravel(heating.mean)[0])
+                H_std = float(np.ravel(heating.std_dev)[0])
+                S = potencia / (H * e)
                 n = resultado.mean.size
                 r_div = np.linspace(0.0, self.raio_modelo, n + 1)
                 h = self.z_elemento_sup - self.z_elemento_inf
                 volume = math.pi * (r_div[1:]**2 - r_div[:-1]**2) * h
-                phi, phi_std = self._fluxo_absoluto(
-                    resultado.mean, resultado.std_dev, volume, f, keff, v,
-                )
+                flux_mean = np.ravel(np.array(resultado.mean, dtype=float))
+                flux_std = np.ravel(np.array(resultado.std_dev, dtype=float))
+                phi = S * flux_mean / volume
+                term_flux = (S / volume) * flux_std
+                term_H = phi * (H_std / H) if H != 0 else 0.0
+                phi_std = np.sqrt(term_flux**2 + term_H**2)
                 print("Mesh Radial:")
-                self._imprimir_perfil(phi, phi_std)
-                resultado = {'keff': keff, 'nu': v, 'fluxo': phi, 'fluxo_std': phi_std, 'volume': volume, 'r': r_div}
+                for i, (val, err) in enumerate(zip(phi, phi_std)):
+                    print(f"  Intervalo {i}:\t {val:.4e} +/- {err:.4e} [neutron/cm².s]")
+                resultado = {'heating': H, 'source_per_sec': S, 'fluxo': phi, 'fluxo_std': phi_std, 'volume': volume, 'r': r_div}
             sp.close()
             return resultado
 
@@ -2156,110 +2494,138 @@ class TrigaIprR1:
             ]
             tally_cubico.scores = ['flux']
             self.lista_contagens.append(tally_cubico)
-            self._registrar_nu_fission()
+            self.contagem_global_heating_local()
         else:
             printv("################################################")
             printv("############   Obtendo Contagem     ############")
             printv("############       MeshCubico       ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
             resultado = sp.get_tally(scores=['flux'], name='MESH_Cubico')
             if processar:
                 printv("############   Trabalhando Dados    ############")
-                keff = sp.keff
-                print("keff (valor combinado):", keff)
-                nu, fission = self._ler_nu_fission(sp)
-                f, v = self._fator_fluxo(keff, nu.mean, fission.mean)
+                e = 1.60218e-19
+                potencia = 250e3
+                heating = sp.get_tally(scores=['heating-local'], name='Energia depositada (heating-local)')
+                H = float(np.ravel(heating.mean)[0])
+                H_std = float(np.ravel(heating.std_dev)[0])
+                S = potencia / (H * e)
                 n = int(round(math.sqrt(resultado.mean.size)))
                 dx = 2 * self.raio_modelo / n
                 dy = 2 * self.raio_modelo / n
                 dz = self.z_elemento_sup - self.z_elemento_inf
                 volume = dx * dy * dz
-                phi, phi_std = self._fluxo_absoluto(
-                    resultado.mean, resultado.std_dev, volume, f, keff, v,
-                )
+                flux_mean = np.ravel(np.array(resultado.mean, dtype=float))
+                flux_std = np.ravel(np.array(resultado.std_dev, dtype=float))
+                volume_arr = np.full(flux_mean.shape, float(volume))
+                phi = S * flux_mean / volume_arr
+                term_flux = (S / volume_arr) * flux_std
+                term_H = phi * (H_std / H) if H != 0 else 0.0
+                phi_std = np.sqrt(term_flux**2 + term_H**2)
                 mapa = phi.reshape((n, n))
                 mapa_std = phi_std.reshape((n, n))
                 print("Mesh Cúbico: shape", mapa.shape, "min", mapa.min(), "max", mapa.max(), "[neutron/cm².s]")
-                resultado = {'keff': keff, 'nu': v, 'mapa': mapa, 'mapa_std': mapa_std, 'volume_bin': volume}
+                resultado = {'heating': H, 'source_per_sec': S, 'mapa': mapa, 'mapa_std': mapa_std, 'volume_bin': volume}
             sp.close()
             return resultado
 
-    def talliesPotenciaElemento(self, get=False, processar=False):
+    def talliesPotenciaElemento(self, get=False, processar=False, potencia=250e3):
         if not get:
             printv("################################################")
             printv("############ Definição de contagem  ############")
             printv("############        Potencia        ############")
             printv("################################################")
 
-            tally_fiss = openmc.Tally(name='Taxa de fissao por elemento')
-            tally_fiss.filters = [openmc.CellFilter(self.celulas_elemento_combustivel)]
-            tally_fiss.scores = ['fission']
-            self.lista_contagens.append(tally_fiss)
+            tally_heat_el = openmc.Tally(name='heating-local por elemento')
+            tally_heat_el.filters = [openmc.CellFilter(self.celulas_elemento_combustivel)]
+            tally_heat_el.scores = ['heating-local']
+            self.lista_contagens.append(tally_heat_el)
 
-            fission_all = openmc.Tally(name='Taxa de fissao media do sistema')
-            fission_all.scores = ['fission']
-            self.lista_contagens.append(fission_all)
-
-            heating_tally = openmc.Tally(name='Energia proveniente de fissoes')
-            heating_tally.scores = ['heating-local']
-            self.lista_contagens.append(heating_tally)
+            self.contagem_global_heating_local()
         else:
             printv("################################################")
             printv("############   Obtendo Contagem     ############")
             printv("############        Potencia        ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
+            heating_el = sp.get_tally(scores=['heating-local'], name='heating-local por elemento')
+            heating_glob = sp.get_tally(scores=['heating-local'], name='Energia depositada (heating-local)')
+            H_glob = float(np.ravel(heating_glob.mean)[0])
+            H_el = np.ravel(heating_el.mean).astype(float)
+            potencia_W = potencia * H_el / H_glob if H_glob != 0 else H_el * 0.0
+            e = 1.60218e-19
+            S = potencia / (H_glob * e) if H_glob != 0 else float('nan')
             resultado = {
-                'fission_elemento': sp.get_tally(scores=['fission'], name='Taxa de fissao por elemento'),
-                'fission_sistema': sp.get_tally(scores=['fission'], name='Taxa de fissao media do sistema'),
-                'heating': sp.get_tally(scores=['heating-local'], name='Energia proveniente de fissoes'),
+                'heating_elemento': heating_el,
+                'heating_global': heating_glob,
             }
             if processar:
-                resultado = self._processar_potencia(
-                    sp, resultado['fission_elemento'], resultado['heating'],
-                )
+                printv("############   Trabalhando Dados    ############")
+                print(f"heating-local global: {H_glob:.6e} [eV/fonte]")
+                print(f"Potência do reator: {potencia} [W]")
+                print("Potência em cada elemento:")
+                for i, pot in enumerate(potencia_W):
+                    print(f"\tElemento {i}: {pot} [W]  (fração {H_el[i]/H_glob:.6e})")
+                soma = float(np.sum(potencia_W))
+                print("Potência somada nos elementos:", soma, "[W]")
+                resultado = {
+                    'potencia_W': potencia_W,
+                    'fracao': H_el / H_glob if H_glob != 0 else H_el * 0.0,
+                    'source_per_sec': S,
+                    'heating_global': H_glob,
+                }
             sp.close()
             return resultado
 
 
-    def talliesPotenciaPin(self, get=False, processar=False):
+    def talliesPotenciaPin(self, get=False, processar=False, potencia=250e3):
         if not get:
             printv("################################################")
             printv("############ Definição de contagem  ############")
             printv("############        Potencia        ############")
             printv("################################################")
 
-            heating_tally = openmc.Tally(name='Energia proveniente de fissoes')
-            heating_tally.scores = ['heating-local']
-            self.lista_contagens.append(heating_tally)
+            tally_heat_pin = openmc.Tally(name='heating-local no combustível')
+            tally_heat_pin.filters = [openmc.CellFilter(self.celulas_combustivel)]
+            tally_heat_pin.scores = ['heating-local']
+            self.lista_contagens.append(tally_heat_pin)
 
-            fission_all = openmc.Tally(name='Taxa de fissao media do sistema')
-            fission_all.scores = ['fission']
-            self.lista_contagens.append(fission_all)
-
-            tally_fission = openmc.Tally(name='Taxa de reacao de fissao')
-            tally_fission.filters = [openmc.CellFilter(self.celulas_combustivel)]
-            tally_fission.scores = ['fission']
-            self.lista_contagens.append(tally_fission)
+            self.contagem_global_heating_local()
         else:
             printv("################################################")
             printv("############   Obtendo Contagem     ############")
             printv("############        Potencia        ############")
             printv("################################################")
 
-            sp = self._abrir_statepoint()
+            sp = openmc.StatePoint(f"statepoint.{self.Settings.batches}.h5")
+            heating_pin = sp.get_tally(scores=['heating-local'], name='heating-local no combustível')
+            heating_glob = sp.get_tally(scores=['heating-local'], name='Energia depositada (heating-local)')
+            H_glob = float(np.ravel(heating_glob.mean)[0])
+            H_pin = np.ravel(heating_pin.mean).astype(float)
+            potencia_W = potencia * H_pin / H_glob if H_glob != 0 else H_pin * 0.0
+            e = 1.60218e-19
+            S = potencia / (H_glob * e) if H_glob != 0 else float('nan')
             resultado = {
-                'heating': sp.get_tally(scores=['heating-local'], name='Energia proveniente de fissoes'),
-                'fission_sistema': sp.get_tally(scores=['fission'], name='Taxa de fissao media do sistema'),
-                'fission_pin': sp.get_tally(scores=['fission'], name='Taxa de reacao de fissao'),
+                'heating_pin': heating_pin,
+                'heating_global': heating_glob,
             }
             if processar:
-                resultado = self._processar_potencia(
-                    sp, resultado['fission_pin'], resultado['heating'],
-                )
+                printv("############   Trabalhando Dados    ############")
+                print(f"heating-local global: {H_glob:.6e} [eV/fonte]")
+                print(f"Potência do reator: {potencia} [W]")
+                print("Potência nas células de combustível:")
+                for i, pot in enumerate(potencia_W):
+                    print(f"\tCélula {i}: {pot} [W]")
+                soma = float(np.sum(potencia_W))
+                print("Potência somada no combustível:", soma, "[W]")
+                resultado = {
+                    'potencia_W': potencia_W,
+                    'fracao': H_pin / H_glob if H_glob != 0 else H_pin * 0.0,
+                    'source_per_sec': S,
+                    'heating_global': H_glob,
+                }
             sp.close()
             return resultado
 

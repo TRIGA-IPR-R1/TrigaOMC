@@ -24,7 +24,8 @@ if __name__ != '__main__': #Caso seja importado como biblioteca
 
 
 # Criando pasta para armazenar todos resultados (com data e copiando as entradas)
-libTrigaIprR1.mkdir(voltar=False, nome="resultados", data=True, cpinputs=True)
+libTrigaIprR1.entra_resultados()
+libTrigaIprR1.mkdir(voltar=False, nome="comparacao_tempo_simulacao", data=True, cpinputs=True)
 
 # Criando reator
 triga = libTrigaIprR1.TrigaIprR1()
